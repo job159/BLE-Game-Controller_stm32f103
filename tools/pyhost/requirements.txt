@@ -1,4 +1,5 @@
 pyserial>=3.5
 PySide6>=6.5          # 圖形介面（host_gui.py）需要；純 CLI 可不裝
 pynput>=1.7           # 手柄映射（按鍵控制電腦的鍵盤/滑鼠）需要
+pygame>=2.5           # 賽車遊戲（kart_game.py）需要
 # bleak>=0.21         # BLE 傳輸（--ble / GUI 的 BLE 模式）需要，可選

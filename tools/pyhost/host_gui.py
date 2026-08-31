@@ -44,7 +44,7 @@ from protocol import (Ack, Attitude, BTN_PRESS, BTN_RELEASE, BtnReport,
                       KEYMAP_SPEC_MAX, KeymapEntry, SysStat)
 from transports import (BleTransport, SerialTransport, TransportError,
                         ble_scan, list_serial_ports)
-from keymapper import KeyMapper, MapError, PRESET_GROUPS
+from keymapper import AirMouse, KeyMapper, MapError, PRESET_GROUPS
 
 KEYMAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "keymap.json")
@@ -250,7 +250,7 @@ class RollingPlot(QWidget):
 # ------------------------------------------------------------------ 主視窗
 
 class MainWindow(QMainWindow):
-    POLL_MS = 20
+    POLL_MS = 5   # 手柄/空中滑鼠延遲優化（原 20ms）
 
     def __init__(self) -> None:
         super().__init__()
@@ -268,6 +268,8 @@ class MainWindow(QMainWindow):
         self._rx_bytes = 0   # 原始位元組計數：>0 但封包=0 → 鮑率/資料損毀
 
         self.mapper = KeyMapper()   # 手柄按鍵 → 鍵盤/滑鼠
+        self.airmouse = AirMouse()  # 姿態 → 游標（KEY0 雙擊切換）
+        self.air_on = False         # 裝置端模式狀態（EVENT/STAT 同步）
         self._km_syncing = False    # 套用「裝置回傳的配置」時避免回射 SET
 
         # 背景執行緒 → GUI 的訊息通道（Qt 物件只能在主執行緒操作）
@@ -501,7 +503,58 @@ class MainWindow(QMainWindow):
                                   "為安全起見每次啟動都預設關閉")
         self.km_enable.toggled.connect(self._toggle_gamepad)
         grid.addWidget(self.km_enable, len(GAMEPAD_KEYS), 0, 1, 3)
+
+        # --- 空中滑鼠（裝置 KEY0 雙擊切換模式；此處調手感） ---
+        row = len(GAMEPAD_KEYS) + 1
+        self.air_dot = QLabel("●")
+        self.air_dot.setStyleSheet(f"color:{C_UNKNOWN};")
+        grid.addWidget(self.air_dot, row, 0)
+        grid.addWidget(QLabel("空中滑鼠(KEY0雙擊)"), row, 1, 1, 2)
+
+        from PySide6.QtWidgets import QSlider
+        self.air_slider = QSlider(Qt.Horizontal)
+        self.air_slider.setRange(5, 80)
+        self.air_slider.setValue(int(self.airmouse.gain))
+        self.air_slider.setToolTip("靈敏度（px/度）")
+        self.air_slider.valueChanged.connect(
+            lambda v: setattr(self.airmouse, "gain", float(v)))
+        grid.addWidget(QLabel("靈敏度"), row + 1, 0, 1, 1)
+        grid.addWidget(self.air_slider, row + 1, 1, 1, 2)
+
+        inv = QHBoxLayout()
+        self.air_inv_x = QCheckBox("反轉X")
+        self.air_inv_y = QCheckBox("反轉Y")
+        self.air_inv_x.toggled.connect(
+            lambda on: setattr(self.airmouse, "invert_x", on))
+        self.air_inv_y.toggled.connect(
+            lambda on: setattr(self.airmouse, "invert_y", on))
+        inv.addWidget(self.air_inv_x)
+        inv.addWidget(self.air_inv_y)
+        inv.addStretch(1)
+        grid.addLayout(inv, row + 2, 0, 1, 3)
         return box
+
+    def _set_air_on(self, on: bool, source: str) -> None:
+        """同步裝置端空中滑鼠狀態（EVENT 即時 / STAT 每秒對帳）。"""
+        if on == self.air_on:
+            return
+        self.air_on = on
+        self.air_dot.setStyleSheet(
+            f"color:{C_OK if on else C_UNKNOWN};")
+        self._log(f"[空中滑鼠] {'開啟' if on else '關閉'}（{source}）")
+        if on:
+            # 拉高遙測頻率讓游標平滑（9600 鮑率下 30Hz 仍在頻寬內）
+            self._send(self.cmder.set_rate(30))
+            if not self.km_enable.isChecked():
+                self._log("[空中滑鼠] 提示：勾選「啟用控制電腦」才會實際移動游標")
+        else:
+            self._send(self.cmder.set_rate(10))
+        self._update_air_active()
+
+    def _update_air_active(self) -> None:
+        self.airmouse.active = self.air_on and self.km_enable.isChecked()
+        if not self.airmouse.active:
+            self.airmouse.reset()
 
     # ------------------------------------------------------------ 手柄映射
 
@@ -559,6 +612,7 @@ class MainWindow(QMainWindow):
             self.km_enable.setStyleSheet("")
             self._log("[手柄] 已停用")
         self.mapper.enabled = on
+        self._update_air_active()
 
     def _load_keymap(self) -> None:
         mapping = dict(DEFAULT_KEYMAP)
@@ -749,6 +803,11 @@ class MainWindow(QMainWindow):
             self.lab_temp.setText(f"溫度 {msg.temp_c:.1f} °C")
             self.lab_clicks.setText(str(msg.clicks))
             self.plot.add(msg.roll, msg.pitch, msg.yaw)
+            try:
+                self.airmouse.feed(msg.yaw, msg.pitch)
+            except MapError as exc:
+                self.airmouse.active = False
+                self._log(f"[空中滑鼠] {exc}")
             if self.csv_writer is not None:
                 self.csv_writer.writerow(
                     [f"{time.time():.3f}", msg.uptime_ms, msg.roll,
@@ -765,6 +824,7 @@ class MainWindow(QMainWindow):
                 color = C_OK if ok else C_BAD
                 self.health[key].setStyleSheet(
                     f"color:{color};font-weight:bold;")
+            self._set_air_on(msg.air_mouse, "狀態同步")
         elif isinstance(msg, BtnReport):
             if msg.key_id in self.km_dots:
                 if msg.action == BTN_PRESS:
@@ -791,6 +851,8 @@ class MainWindow(QMainWindow):
         elif isinstance(msg, Event):
             if msg.event_id == EventId.BOOT:
                 self._log(f"[事件] 裝置開機（重置原因旗標 0x{msg.arg:02X}）")
+            elif msg.event_id == EventId.AIRMOUSE:
+                self._set_air_on(bool(msg.arg), "KEY0 雙擊")
             else:
                 self._log(f"[事件] {msg.describe()}")
         elif isinstance(msg, Ack):

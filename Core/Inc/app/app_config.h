@@ -52,7 +52,7 @@
 
 /* ---- 取樣與更新率 ---- */
 #define APP_IMU_PERIOD_MS       10       /* 100Hz 姿態解算 */
-#define APP_BTN_PERIOD_MS       10       /* 按鍵掃描 */
+#define APP_BTN_PERIOD_MS       5        /* 按鍵掃描（手柄延遲優化） */
 #define APP_UI_PERIOD_MS        100      /* OLED 10FPS */
 #define APP_COMM_RX_PERIOD_MS   10       /* BLE 收包解析 */
 #define APP_TELEMETRY_HZ_DEF    10       /* 姿態回報預設頻率（0=關閉，上限 50） */
@@ -63,7 +63,7 @@
 #define APP_STOR_COMMIT_FORCE_MS   10000 /* 持續變更時，最久多長時間必須落盤一次 */
 
 /* ---- 按鍵時序 ---- */
-#define APP_BTN_DEBOUNCE_MS     20
+#define APP_BTN_DEBOUNCE_MS     12       /* 手柄延遲優化（品質差的按鍵可調回 20） */
 #define APP_BTN_LONG_MS         1000
 #define APP_BTN_DOUBLE_GAP_MS   250
 

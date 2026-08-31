@@ -42,6 +42,7 @@ class EventId(IntEnum):
     CLICKS_RESET = 3
     CAL_DONE = 4
     BTN_DOUBLE = 5
+    AIRMOUSE = 6      # arg: 1 開啟 / 0 關閉（KEY0 雙擊切換）
 
 
 ACK_STATUS = {0: "OK", 1: "ERR", 2: "UNKNOWN", 3: "BUSY"}
@@ -112,6 +113,10 @@ class SysStat:
     @property
     def eeprom_ok(self) -> bool:
         return bool(self.flags & 0x04)
+
+    @property
+    def air_mouse(self) -> bool:
+        return bool(self.flags & 0x10)
 
 
 @dataclass

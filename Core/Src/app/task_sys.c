@@ -42,7 +42,8 @@ void task_sys(void)
             .sys_flags   = (uint8_t)((imu_healthy()  ? 0x01u : 0u) |
                                      (oled_ok()      ? 0x02u : 0u) |
                                      (stor_healthy() ? 0x04u : 0u) |
-                                     (app_state()->bridge_mode ? 0x08u : 0u)),
+                                     (app_state()->bridge_mode ? 0x08u : 0u) |
+                                     (app_state()->air_mouse   ? 0x10u : 0u)),
             .err_count   = error_total(),
             .boot_count  = stor_get()->boot_count,
             .uptime_s    = HAL_GetTick() / 1000u,

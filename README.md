@@ -123,6 +123,9 @@ python host.py --scan
 `reset`、`info` 下發命令；`--csv log.csv` 同步記錄資料。
 手機端亦可用 nRF Toolbox（UART/NUS）連線觀察原始封包。
 
+**賽車遊戲**：`python kart_game.py --ble --name HC-42` —— 裝置傾斜當方向盤、
+甩尾鍵漂移集氣、氮氣鍵爆發（F1 遊戲內綁定實體鍵，鍵盤也可玩）。
+
 ### 2.4 BLE 模組準備
 
 任何「透傳（transparent UART）」韌體的 nRF52832 模組皆可，
@@ -160,12 +163,12 @@ Core/
     bsp/       板級：bsp_board.h(腳位總表)、bsp_uart、bsp_i2c、bsp_wdg、bsp
   Src/main.c   CubeMX 進入點（USER CODE 掛 app_main_init/loop）
 Drivers/eMPL/  （自行放入 InvenSense eMPL，見 Docs/dmp_porting.md）
-Docs/          protocol.md(協定規格)、architecture.md(設計文件)、dmp_porting.md
-tools/pyhost/  Python 主機工具（protocol.py / host.py）
+Docs/          protocol.md(協定)、architecture.md(設計)、engineering_review.md(工程復盤)、dmp_porting.md
+tools/pyhost/  Python 主機工具（GUI/CLI/診斷）與 kart_game.py 賽車遊戲
 tests/host/    PC 端單元測試（gcc 即可執行）
 ```
 
-閱讀順序建議：`Docs/architecture.md` → `bsp_board.h` → `app_main.c`
+閱讀順序建議：`Docs/engineering_review.md`(為什麼) → `Docs/architecture.md`(是什麼) → `bsp_board.h` → `app_main.c`
 → 感興趣的任務檔。
 
 ## 4. 人機介面
@@ -175,6 +178,7 @@ tests/host/    PC 端單元測試（gcc 即可執行）
 | 操作 | 功能 |
 |---|---|
 | KEY0 單擊 | 點擊計數 +1（EEPROM 持久化，靜止 2 秒自動落盤） |
+| KEY0 雙擊 | 空中滑鼠模式開關（MPU 姿態 → PC 游標；GUI 有靈敏度滑桿與反轉選項，受「啟用控制電腦」總開關管制） |
 | KEY0 長按 | 計數歸零（立即落盤） |
 | KEY1 單擊 | OLED 換頁（儀表板 → EEPROM 記錄 → BLE 鏈路 → 原始值 → 系統資訊） |
 | KEY1 雙擊 | 遙測開/關 |

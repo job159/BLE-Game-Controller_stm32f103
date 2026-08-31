@@ -67,7 +67,7 @@
 | offset | 型別 | 欄位 | 說明 |
 |---|---|---|---|
 | 0 | u8 | cpu_percent | 排程器量測的 CPU 使用率 |
-| 1 | u8 | sys_flags | bit0 IMU ok、bit1 OLED ok、bit2 EEPROM ok、bit3 bridge |
+| 1 | u8 | sys_flags | bit0 IMU ok、bit1 OLED ok、bit2 EEPROM ok、bit3 bridge、bit4 空中滑鼠 |
 | 2 | u16 | err_count | I2C+UART+CRC 錯誤總和（飽和） |
 | 4 | u32 | boot_count | 開機次數（EEPROM 持久化） |
 | 8 | u32 | uptime_s | 秒 |
@@ -81,6 +81,7 @@
 | 3 | CLICKS_RESET | 0 |
 | 4 | CAL_DONE | 0=成功、1=失敗（裝置晃動） |
 | 5 | BTN_DOUBLE | 切換後的遙測頻率（0=關閉） |
+| 6 | AIRMOUSE | 1=開啟 0=關閉（KEY0 雙擊切換空中滑鼠） |
 
 ### 2.4 INFO（24B）
 

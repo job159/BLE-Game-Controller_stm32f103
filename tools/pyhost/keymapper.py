@@ -79,6 +79,86 @@ class MapError(ValueError):
     """映射規格字串不合法。"""
 
 
+class AirMouse:
+    """空中滑鼠：MPU 姿態（yaw/pitch）差分 → 游標相對移動。
+
+    演算法：
+      - 用「角度差分」而非絕對角度（像電視遙控指標）：轉多少動多少，
+        不會因 yaw 緩慢漂移而讓游標自己滑走。
+      - yaw 差分處理 ±180° 環繞；微小抖動（<0.02°）吸收為死區。
+      - 小數位移累積後再取整送出 —— 低靈敏度下移動依然平滑。
+    """
+
+    DEADZONE_DEG = 0.02
+    MAX_STEP_PX = 120.0
+
+    def __init__(self, mouse=None) -> None:
+        self._mouse = mouse          # 可注入（測試）；預設延遲載入 pynput
+        self.gain = 30.0             # px / 度
+        self.invert_x = False
+        self.invert_y = False
+        self.active = False
+        self._last = None            # (yaw, pitch)
+        self._acc_x = 0.0
+        self._acc_y = 0.0
+
+    def _ensure(self) -> None:
+        if self._mouse is None:
+            try:
+                from pynput.mouse import Controller
+            except ImportError:
+                raise MapError("空中滑鼠需要 pynput：pip install pynput")
+            self._mouse = Controller()
+
+    def reset(self) -> None:
+        self._last = None
+        self._acc_x = 0.0
+        self._acc_y = 0.0
+
+    def feed(self, yaw: float, pitch: float):
+        """餵入一筆姿態。有移動時回傳 (dx, dy)，否則 None。"""
+        if not self.active:
+            self._last = None
+            return None
+        self._ensure()
+        if self._last is None:
+            self._last = (yaw, pitch)
+            return None
+
+        dyaw = yaw - self._last[0]
+        if dyaw > 180.0:
+            dyaw -= 360.0
+        elif dyaw < -180.0:
+            dyaw += 360.0
+        dpitch = pitch - self._last[1]
+        self._last = (yaw, pitch)
+
+        if abs(dyaw) < self.DEADZONE_DEG:
+            dyaw = 0.0
+        if abs(dpitch) < self.DEADZONE_DEG:
+            dpitch = 0.0
+
+        dx = -dyaw * self.gain       # 預設方向；不合手感用 invert 勾選修正
+        dy = -dpitch * self.gain     # pitch 上仰 → 游標向上（螢幕 -y）
+        if self.invert_x:
+            dx = -dx
+        if self.invert_y:
+            dy = -dy
+        dx = max(-self.MAX_STEP_PX, min(self.MAX_STEP_PX, dx))
+        dy = max(-self.MAX_STEP_PX, min(self.MAX_STEP_PX, dy))
+
+        self._acc_x += dx
+        self._acc_y += dy
+        mx = int(self._acc_x)
+        my = int(self._acc_y)
+        if mx or my:
+            self._acc_x -= mx
+            self._acc_y -= my
+            self._mouse.move(mx, my)
+            return (mx, my)
+        return None
+
+
 class KeyMapper:
     """按鍵事件 → 動作。kb/mouse 可注入（測試用），預設延遲載入 pynput。"""
 
@@ -254,6 +334,11 @@ class KeyMapper:
                 if entry and entry[0] == "scroll":
                     self._mouse.scroll(entry[1], entry[2])
                 self._held_scroll[key_id] = now
+
+    def get_mouse(self):
+        """供 AirMouse 共用滑鼠後端（延遲載入）。"""
+        self._ensure_backend()
+        return self._mouse
 
     def release_all(self) -> None:
         """安全網：停用/斷線時釋放所有按住中的鍵，避免鍵盤卡死。"""

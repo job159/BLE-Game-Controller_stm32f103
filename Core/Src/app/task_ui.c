@@ -98,6 +98,9 @@ static void draw_dash(void)
     uint8_t hz = comm_telemetry_hz();
 
     gfx_printf(0, 0, 1, "CLK %-6lu", (unsigned long)stor_get()->click_count);
+    if (app_state()->air_mouse) {
+        gfx_text(60, 0, 1, "AIR");   /* 空中滑鼠模式指示 */
+    }
     /* 右緣對齊安全區："TX 99Hz" = 7 字 × 6px = 42px */
     int16_t tx_x = (int16_t)(gfx_width() - 42u);
     if (hz > 0u) {

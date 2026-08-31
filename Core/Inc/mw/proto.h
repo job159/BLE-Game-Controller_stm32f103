@@ -68,6 +68,7 @@ extern "C" {
 #define PROTO_EV_CLICKS_RESET   3u
 #define PROTO_EV_CAL_DONE       4u   /* arg = 0 成功 / 1 失敗 */
 #define PROTO_EV_BTN_DOUBLE     5u
+#define PROTO_EV_AIRMOUSE       6u   /* arg = 1 開啟 / 0 關閉（KEY0 雙擊切換） */
 
 /* ---- Payload 結構（packed，直接以記憶體映像傳輸；兩端皆為 LE） ---- */
 

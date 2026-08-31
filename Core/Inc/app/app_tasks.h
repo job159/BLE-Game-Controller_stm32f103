@@ -29,6 +29,7 @@ typedef struct {
     bool     bridge_mode;      /* CLI 指令進入、comm 離開   */
     bool     cal_request;      /* 任何人設、task_imu 清     */
     bool     ui_test_mode;     /* CLI `oled test` 設、task_ui 讀（顯示測試圖） */
+    bool     air_mouse;        /* KEY0 雙擊切換：PC 端據此把姿態轉為游標移動 */
     uint32_t comm_tx_frames;   /* task_comm_tx              */
 } app_state_t;
 

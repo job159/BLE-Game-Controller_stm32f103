@@ -44,6 +44,16 @@ static void on_key0(btn_event_t evt)
     stor_record_t *rec = stor_get();
 
     switch (evt) {
+    case BTN_EVT_DOUBLE: {
+        /* 空中滑鼠模式切換：狀態在裝置端（OLED 可見、STAT 旗標同步），
+         * 實際的姿態→游標換算在 PC 端執行 */
+        app_state_t *app = app_state();
+        app->air_mouse = !app->air_mouse;
+        ui_notify(app->air_mouse ? "AIR MOUSE ON" : "AIR MOUSE OFF");
+        comm_send_event(PROTO_EV_AIRMOUSE, app->air_mouse ? 1u : 0u);
+        break;
+    }
+
     case BTN_EVT_CLICK:
         rec->click_count++;
         stor_mark_dirty();               /* 靜止 2 秒後自動落盤 */
@@ -129,8 +139,11 @@ void task_btn_init(void)
     for (uint8_t i = 0u; i < KEY_COUNT; i++) {
         btn_init(&s_keys[i], i, &cfg, key_read, (void *)(uintptr_t)i,
                  btn_dispatch, NULL);
-        if (i != 1u) {
-            /* 僅 KEY1 需要雙擊；其餘停用換取零延遲單擊 */
+        if (i >= 2u) {
+            /* 手柄鍵（KEY2~5）停用雙擊換取零延遲；
+             * KEY0（雙擊=空中滑鼠）與 KEY1（雙擊=遙測開關）保留 ——
+             * 代價是兩鍵的單擊需等雙擊窗口確認（+250ms），
+             * 計數與換頁皆非延遲敏感，可接受 */
             btn_enable_double(&s_keys[i], false);
         }
     }
