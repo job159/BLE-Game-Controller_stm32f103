@@ -17,6 +17,8 @@ GUI 以 20ms QTimer 輪詢解包 —— Qt 物件只在主執行緒被觸碰。
 from __future__ import annotations
 
 import csv
+import json
+import os
 import queue
 import sys
 import threading
@@ -37,10 +39,18 @@ try:
 except ImportError:
     sys.exit("圖形介面需要 PySide6：pip install PySide6")
 
-from protocol import (Ack, Attitude, Commander, Event, EventId, Frame,
-                      FrameParser, Info, SysStat)
+from protocol import (Ack, Attitude, BTN_PRESS, BTN_RELEASE, BtnReport,
+                      Commander, Event, EventId, Frame, FrameParser, Info,
+                      KEYMAP_SPEC_MAX, KeymapEntry, SysStat)
 from transports import (BleTransport, SerialTransport, TransportError,
                         ble_scan, list_serial_ports)
+from keymapper import KeyMapper, MapError, PRESET_GROUPS
+
+KEYMAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "keymap.json")
+GAMEPAD_KEYS = (2, 3, 4, 5)   # 手柄鍵（KEY0/1 有裝置本地功能，不開放映射）
+DEFAULT_KEYMAP = {2: "mouse:left", 3: "mouse:right",
+                  4: "scroll:up", 5: "scroll:down"}
 
 # 系列色（曲線 / 大字讀數共用）
 C_ROLL = QColor("#e05c5c")
@@ -257,6 +267,9 @@ class MainWindow(QMainWindow):
         self._fps = 0.0
         self._rx_bytes = 0   # 原始位元組計數：>0 但封包=0 → 鮑率/資料損毀
 
+        self.mapper = KeyMapper()   # 手柄按鍵 → 鍵盤/滑鼠
+        self._km_syncing = False    # 套用「裝置回傳的配置」時避免回射 SET
+
         # 背景執行緒 → GUI 的訊息通道（Qt 物件只能在主執行緒操作）
         self._log_q: "queue.Queue[str]" = queue.Queue()
         self._conn_q: "queue.Queue[tuple]" = queue.Queue()
@@ -291,12 +304,14 @@ class MainWindow(QMainWindow):
 
         bottom = QHBoxLayout()
         bottom.addWidget(self._build_commands())
+        bottom.addWidget(self._build_keymap())
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(500)
         self.log_view.setFont(QFont("Consolas", 9))
         bottom.addWidget(self.log_view, 1)
         layout.addLayout(bottom)
+        self._load_keymap()
 
     def _build_conn_bar(self) -> QGroupBox:
         box = QGroupBox("連線")
@@ -441,7 +456,134 @@ class MainWindow(QMainWindow):
 
         self.raw_check = QCheckBox("顯示原始封包")
         grid.addWidget(self.raw_check, 4, 0, 1, 3)
+        self.rawbytes_check = QCheckBox("顯示原始位元組(hex)")
+        self.rawbytes_check.setToolTip(
+            "把收到的每一段原始位元組以 hex 印進日誌 —— 鮑率錯配時"
+            "看到的是隨機碎渣；正常時應看到 aa 55 開頭的封包")
+        grid.addWidget(self.rawbytes_check, 5, 0, 1, 3)
         return box
+
+    def _build_keymap(self) -> QGroupBox:
+        box = QGroupBox("手柄映射（KEY2~KEY5）")
+        grid = QGridLayout(box)
+
+        self.km_dots = {}
+        self.km_combos = {}
+        for row, key_id in enumerate(GAMEPAD_KEYS):
+            dot = QLabel("●")
+            dot.setStyleSheet(f"color:{C_UNKNOWN};")
+            self.km_dots[key_id] = dot
+            grid.addWidget(dot, row, 0)
+            grid.addWidget(QLabel(f"KEY{key_id}"), row, 1)
+
+            combo = QComboBox()
+            combo.setEditable(True)
+            self._fill_mapping_combo(combo)
+            combo.setMinimumWidth(150)
+            combo.setMaxVisibleItems(24)
+            combo.setToolTip(
+                "可直接輸入，格式：\n"
+                "  mouse:left/right/middle/double/x1/x2\n"
+                "  scroll:up/down/left/right（按住連發）\n"
+                "  鍵盤鍵或組合：space、w、f5、ctrl+c、alt+tab、\n"
+                "  volume_up、play_pause…（按住=按住）\n"
+                "  text:要輸入的文字\n"
+                "  run:程式或命令（如 run:notepad）\n"
+                "留空 = 不動作")
+            combo.setCurrentText(DEFAULT_KEYMAP.get(key_id, ""))
+            combo.currentTextChanged.connect(
+                lambda text, k=key_id: self._apply_mapping(k, text))
+            self.km_combos[key_id] = combo
+            grid.addWidget(combo, row, 2)
+
+        self.km_enable = QCheckBox("啟用控制電腦")
+        self.km_enable.setToolTip("勾選後裝置按鍵將真的觸發滑鼠/鍵盤；"
+                                  "為安全起見每次啟動都預設關閉")
+        self.km_enable.toggled.connect(self._toggle_gamepad)
+        grid.addWidget(self.km_enable, len(GAMEPAD_KEYS), 0, 1, 3)
+        return box
+
+    # ------------------------------------------------------------ 手柄映射
+
+    @staticmethod
+    def _fill_mapping_combo(combo: QComboBox) -> None:
+        """分類填充：分類標題列不可選，避免長清單捲到眼花。"""
+        combo.addItem("")
+        for title, items in PRESET_GROUPS:
+            combo.addItem(f"── {title} ──")
+            header = combo.model().item(combo.count() - 1)
+            header.setEnabled(False)
+            for it in items:
+                combo.addItem(it)
+
+    def _apply_mapping(self, key_id: int, spec: str) -> None:
+        combo = self.km_combos[key_id]
+        try:
+            self.mapper.set_mapping(key_id, spec)
+            combo.setStyleSheet("")
+            self._save_keymap()
+        except MapError as exc:
+            combo.setStyleSheet("border:1px solid #e03131;")
+            self._log(f"[手柄] KEY{key_id} 映射無效：{exc}")
+            return
+        self._push_mapping_to_device(key_id, spec.strip())
+
+    def _push_mapping_to_device(self, key_id: int, spec: str) -> None:
+        """使用者編輯 → 同步寫入裝置 EEPROM（手柄自帶配置）。"""
+        if self._km_syncing or (self.transport is None):
+            return
+        try:
+            enc = spec.encode("ascii")
+        except UnicodeEncodeError:
+            self._log(f"[手柄] KEY{key_id} 含非 ASCII，僅存於本機不寫入裝置")
+            return
+        if len(enc) > KEYMAP_SPEC_MAX:
+            self._log(f"[手柄] KEY{key_id} 超過 {KEYMAP_SPEC_MAX} 字元，"
+                      f"僅存於本機不寫入裝置")
+            return
+        self.transport.write(self.cmder.set_keymap(key_id, spec))
+
+    def _toggle_gamepad(self, on: bool) -> None:
+        if on:
+            # 先確認映射後端可用（pynput 缺席時立即提示而非按下才炸）
+            try:
+                self.mapper._ensure_backend()
+            except MapError as exc:
+                QMessageBox.warning(self, "手柄", str(exc))
+                self.km_enable.setChecked(False)
+                return
+            self.km_enable.setStyleSheet("color:#e8590c;font-weight:bold;")
+            self._log("[手柄] 已啟用：裝置按鍵將控制此電腦")
+        else:
+            self.mapper.release_all()
+            self.km_enable.setStyleSheet("")
+            self._log("[手柄] 已停用")
+        self.mapper.enabled = on
+
+    def _load_keymap(self) -> None:
+        mapping = dict(DEFAULT_KEYMAP)
+        try:
+            with open(KEYMAP_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f).get("map", {})
+            mapping.update({int(k): v for k, v in saved.items()})
+        except (OSError, ValueError):
+            pass   # 無設定檔/損毀 → 用預設
+        for key_id in GAMEPAD_KEYS:
+            spec = mapping.get(key_id, "")
+            self.km_combos[key_id].setCurrentText(spec)
+            try:
+                self.mapper.set_mapping(key_id, spec)
+            except MapError:
+                pass
+
+    def _save_keymap(self) -> None:
+        data = {"map": {str(k): self.km_combos[k].currentText().strip()
+                        for k in GAMEPAD_KEYS}}
+        try:
+            with open(KEYMAP_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            self._log(f"[手柄] 設定存檔失敗：{exc}")
 
     # ------------------------------------------------------------ 連線
 
@@ -508,6 +650,7 @@ class MainWindow(QMainWindow):
         threading.Thread(target=work, daemon=True).start()
 
     def _disconnect(self, reason: str) -> None:
+        self.mapper.release_all()   # 斷線時放開所有按住中的鍵
         if self.transport is not None:
             self.transport.close()
             self.transport = None
@@ -537,6 +680,8 @@ class MainWindow(QMainWindow):
                 self.conn_btn.setEnabled(True)
                 self.statusBar().showMessage(f"已連線：{payload.name}")
                 self._log(f"已連線：{payload.name}")
+                # 手柄配置以裝置（EEPROM）為準：連上即讀回
+                self.transport.write(self.cmder.get_keymap())
             else:
                 self.conn_btn.setText("連線")
                 self.conn_btn.setEnabled(True)
@@ -570,8 +715,12 @@ class MainWindow(QMainWindow):
         data = self.transport.read_nowait()
         if data:
             self._rx_bytes += len(data)
+            if self.rawbytes_check.isChecked():
+                for off in range(0, min(len(data), 256), 32):
+                    self._log(f"[bytes] {data[off:off + 32].hex(' ')}")
             for frame in self.parser.feed(data):
                 self._on_frame(frame)
+        self.mapper.poll()   # 滾輪按住連發
 
         now = time.monotonic()
         if (now - self._fps_t0) >= 1.0:
@@ -616,6 +765,29 @@ class MainWindow(QMainWindow):
                 color = C_OK if ok else C_BAD
                 self.health[key].setStyleSheet(
                     f"color:{color};font-weight:bold;")
+        elif isinstance(msg, BtnReport):
+            if msg.key_id in self.km_dots:
+                if msg.action == BTN_PRESS:
+                    self.km_dots[msg.key_id].setStyleSheet(f"color:{C_OK};")
+                elif msg.action == BTN_RELEASE:
+                    self.km_dots[msg.key_id].setStyleSheet(
+                        f"color:{C_UNKNOWN};")
+            try:
+                fired = self.mapper.on_button(msg.key_id, msg.action)
+            except MapError as exc:
+                fired = None
+                self._log(f"[手柄] 執行失敗：{exc}")
+            if fired:
+                self._log(f"[手柄] {msg.describe()} → {fired}")
+        elif isinstance(msg, KeymapEntry):
+            # 裝置回傳的持久化配置：覆蓋面板但不回射 SET
+            if (msg.key_id in self.km_combos) and msg.spec:
+                self._km_syncing = True
+                try:
+                    self.km_combos[msg.key_id].setCurrentText(msg.spec)
+                finally:
+                    self._km_syncing = False
+                self._log(f"[手柄] 裝置配置 {msg.describe()}")
         elif isinstance(msg, Event):
             if msg.event_id == EventId.BOOT:
                 self._log(f"[事件] 裝置開機（重置原因旗標 0x{msg.arg:02X}）")
@@ -660,6 +832,7 @@ class MainWindow(QMainWindow):
         self.log_view.appendPlainText(f"{time.strftime('%H:%M:%S')} {text}")
 
     def closeEvent(self, ev) -> None:
+        self.mapper.release_all()
         if self.transport is not None:
             self.transport.close()
         if self.csv_file is not None:

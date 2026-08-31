@@ -35,6 +35,8 @@
 | 0x03 | EVENT | 事件發生時 | 見 2.3 |
 | 0x04 | LOG | 保留 | ASCII 文字 |
 | 0x05 | INFO | 回應 GET_INFO | 見 2.4 |
+| 0x06 | BTN | 按鍵狀態變化時（即時） | 見 2.6 |
+| 0x07 | KEYMAP | 回應 GET_KEYMAP（每鍵一幀） | 見 2.7 |
 | 0x7F | ACK | 收到任何命令後 | 見 2.5 |
 
 ### 主機 → 裝置
@@ -46,6 +48,8 @@
 | 0x82 | RESET_CLICKS | 無 | 點擊計數歸零（立即落盤） |
 | 0x83 | CAL_GYRO | 無 | 觸發陀螺儀校正（非同步，結果見 EVENT） |
 | 0x84 | GET_INFO | 無 | 查詢裝置資訊 |
+| 0x85 | SET_KEYMAP | 同 2.7 | 寫入一鍵映射（RAM 立即生效、EEPROM 稍後落盤） |
+| 0x86 | GET_KEYMAP | 無 | 查詢全部映射（回 ACK + 4 幀 KEYMAP） |
 
 ### 2.1 ATTITUDE（16B）
 
@@ -93,6 +97,30 @@
 | 0 | u8 | req_type（原命令 TYPE） |
 | 1 | u8 | req_seq（原命令 SEQ） |
 | 2 | u8 | status：0 OK / 1 ERR / 2 UNKNOWN / 3 BUSY |
+
+### 2.6 BTN（2B）—— 手柄按鍵回報
+
+| offset | 型別 | 欄位 | 說明 |
+|---|---|---|---|
+| 0 | u8 | key_id | 0..5（KEY0..KEY5；KEY2~5 為手柄鍵） |
+| 1 | u8 | action | 0 press / 1 release / 2 click / 3 double / 4 long（與韌體 `btn_event_t` 同值） |
+
+press/release 於去彈跳完成後即時發出（可表達「按住」語意，
+PC 端據此映射鍵盤/滑鼠的按下與釋放）；click/double/long 為
+狀態機加值資訊。所有按鍵皆上報，KEY0/KEY1 同時保有裝置本地功能。
+
+### 2.7 KEYMAP / SET_KEYMAP（變長，2 + len）—— 手柄配置持久化
+
+| offset | 型別 | 欄位 | 說明 |
+|---|---|---|---|
+| 0 | u8 | key_id | 2..5（手柄鍵） |
+| 1 | u8 | len | spec 長度，0 = 未設定/清除，上限 35 |
+| 2 | char[len] | spec | ASCII 映射規格字串（"mouse:left"、"ctrl+c"…） |
+
+裝置把 spec 存於 EEPROM（0x40 起，每鍵獨立 40B 條目 + CRC），
+**語意由 PC 端解讀，裝置只是設定的載體** —— 手柄自帶配置，
+接上任何一台裝有主機工具的電腦即恢復。GUI 連線時發 GET_KEYMAP
+以裝置內容覆蓋面板；使用者編輯時發 SET_KEYMAP 回寫。
 
 ## 3. 封包範例
 

@@ -64,6 +64,30 @@ void comm_send_event(uint8_t ev_id, uint32_t arg)
     send_frame(PROTO_T_EVENT, &ev, sizeof(ev));
 }
 
+void comm_send_btn(uint8_t key_id, uint8_t action)
+{
+    if (app_state()->bridge_mode) {
+        return;   /* 橋接期間通道非協定資料，不上報 */
+    }
+    proto_btn_t btn = { .key_id = key_id, .action = action };
+    send_frame(PROTO_T_BTN, &btn, sizeof(btn));
+}
+
+/* 回送一鍵映射：payload = {key_id, len, spec[len]} */
+static void send_keymap_entry(uint8_t key_id)
+{
+    uint8_t payload[2u + PROTO_KEYMAP_SPEC_MAX];
+    char spec[STOR_KEYMAP_SPEC_MAX + 1u];
+    int n = stor_keymap_get(key_id, spec, sizeof(spec));
+    if (n < 0) {
+        n = 0;
+    }
+    payload[0] = key_id;
+    payload[1] = (uint8_t)n;
+    memcpy(&payload[2], spec, (size_t)n);
+    send_frame(PROTO_T_KEYMAP, payload, (uint8_t)(2 + n));
+}
+
 static void send_info(void)
 {
     proto_info_t info;
@@ -156,6 +180,27 @@ static void on_frame(const proto_frame_t *f, void *user)
     case PROTO_T_GET_INFO:
         send_ack(f, PROTO_ACK_OK);
         send_info();
+        break;
+
+    case PROTO_T_SET_KEYMAP:
+        /* payload = {key_id, len, spec[len]}，len 欄位須與框架長度一致 */
+        if ((f->len < 2u) || (f->payload[1] != (uint8_t)(f->len - 2u))) {
+            send_ack(f, PROTO_ACK_ERR);
+        } else if (stor_keymap_set(f->payload[0],
+                                   (const char *)&f->payload[2],
+                                   f->payload[1]) == APP_OK) {
+            send_ack(f, PROTO_ACK_OK);   /* 已入 RAM，storage 任務稍後落盤 */
+        } else {
+            send_ack(f, PROTO_ACK_ERR);
+        }
+        break;
+
+    case PROTO_T_GET_KEYMAP:
+        send_ack(f, PROTO_ACK_OK);
+        for (uint8_t k = STOR_KEYMAP_FIRST_KEY;
+             k < STOR_KEYMAP_FIRST_KEY + STOR_KEYMAP_KEYS; k++) {
+            send_keymap_entry(k);
+        }
         break;
 
     default:

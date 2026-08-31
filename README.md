@@ -20,8 +20,9 @@
 | 姿態解算 | 100Hz Mahony 互補濾波（預設）或 MPU6050 DMP（可切換） |
 | BLE 遙測 | 二進位協定（SOF+CRC16），姿態 10Hz（0~50Hz 可調）+ 系統狀態 1Hz + 事件 |
 | PC 端工具 | Python 即時儀表板 / 命令下發 / CSV 記錄；Serial 與 BLE(NUS) 雙傳輸 |
-| OLED | 儀表板 / EEPROM 記錄 / 原始值 / 系統資訊四頁 + 開機畫面 + 提示條；DMA 非同步刷新 |
+| OLED | 儀表板 / EEPROM 記錄 / BLE 鏈路 / 原始值 / 系統資訊五頁 + 開機畫面 + 提示條；DMA 非同步刷新 |
 | 按鍵 | 去彈跳 / 單擊 / 雙擊 / 長按狀態機；KEY0 點擊計數寫入 EEPROM |
+| 手柄模式 | KEY2~KEY5 事件即時上報，PC 端（pynput）映射為鍵盤/滑鼠動作 —— 裝置可當 BLE 遙控器/簡報器 |
 | 參數持久化 | 雙槽輪替 + CRC + 讀回驗證（斷電安全）、延遲落盤（磨耗控制） |
 | 穩定性 | IWDG 任務簽到制、I2C bus recovery、降級運行、重置原因追蹤 |
 | 可觀測性 | CLI `stat` 完整統計（任務耗時/CPU%/錯誤計數）、BLE STAT 封包 |
@@ -35,9 +36,10 @@
 | MPU6050 INT | PB5 | MPU INT 腳 | 下降緣 EXTI（教學觀測用） |
 | I2C2 SCL / SDA | PB10 / PB11 | OLED (SSD1306/Y00429) | 顯示匯流排，DMA 刷新 |
 | USART1 TX / RX | PA9 / PA10 | USB-TTL RX / TX | CLI，115200 8N1 |
-| USART2 TX / RX | PA2 / PA3 | nRF52832 RXD / TXD | BLE 透傳，115200 8N1（交叉接） |
-| KEY0 | PA0 | 按鍵另一端接 GND | 內部上拉，低電位按下 |
-| KEY1 | PA1 | 按鍵另一端接 GND | 內部上拉，低電位按下 |
+| USART2 TX / RX | PA2 / PA3 | nRF52832 RXD / TXD | BLE 透傳，9600 8N1（遷就 HC-42 出廠值；交叉接） |
+| KEY0 | PA0 | 按鍵另一端接 GND | 內部上拉，低電位按下（點擊計數） |
+| KEY1 | PA1 | 按鍵另一端接 GND | 內部上拉，低電位按下（UI 操作） |
+| KEY2~KEY5 | PA4~PA7 | 按鍵另一端接 GND | 手柄鍵：事件上報 PC，由 GUI 映射鍵盤/滑鼠 |
 | LED | PC13 | 板載 LED | 低電位點亮 |
 | 電源 | 3.3V / GND | 所有模組共地 | 全系統 3.3V；模組板載 I2C 上拉即可 |
 
@@ -131,18 +133,21 @@ python host.py --scan
 > 位元組 0 → 資料根本沒進模組（多半是鮑率或 TX/RX 未交叉）；
 > 位元組 >0 但封包 0 → 資料有到但內容亂（鮑率/雜訊）。
 
-**HC-42 等出廠 9600 的模組**，免拔線佈建（建議做一次，永久生效）：
+**鮑率自動佈建（預設開啟，免 USB-TTL）**：HC-42 等模組出廠常為
+9600。韌體開機時會自動探測模組鮑率（AT 掃描 115200/9600/57600/
+38400/19200），不符時自動下 `AT+BAUD` 改寫模組並驗證：
 
-1. GUI/手機先中斷 BLE 連線（HC 系列連線中不吃 AT 命令）
-2. CLI（USART1）依序輸入：
-   - `ble 9600` —— STM32 的 USART2 暫時降到 9600 遷就模組
-   - `bridge` —— 進入直通模式，終端機設定「送出 CR+LF」
-   - `AT` → 應回 `OK`；`AT+BAUD=115200` → 回 OK 後模組永久改為 115200
-   - `Ctrl+]` 離開直通，`ble 115200` 切回
-3. 重新用 GUI 連線，數據即會流動
+- 條件：該次開機時模組**不可處於 BLE 連線中**（HC 系列連線中不吃
+  AT）。若被連線探測會失敗，下次開機自動再試。
+- 成功改寫時 OLED 會顯示提示條（如 `BLE 9600>115200`），並在
+  EEPROM 記「已佈建」旗標 —— 之後每次開機零成本跳過。
+- 換了新模組：CLI 輸入 `ble auto` 隨時重跑（`ble` 可查旗標狀態）。
+- 開關：`app_config.h` 的 `APP_BLE_AUTOBAUD`。
 
-不想動模組也可以反向遷就：CubeMX 把 USART2 改 9600 重新產生
-（注意 9600 頻寬上限 ≈960B/s，遙測頻率別超過 20Hz）。
+手動備援（自動佈建失敗、或非 CRLF AT 方言的模組）：CLI
+`ble 9600` → `bridge`（終端機送 CR+LF）→ `AT` / `AT+BAUD=115200`
+→ `Ctrl+]` → `ble 115200`。或反向遷就：CubeMX 把 USART2 改 9600
+（頻寬上限 ≈960B/s，遙測 ≤20Hz）。
 
 ## 3. 目錄結構
 
@@ -171,14 +176,15 @@ tests/host/    PC 端單元測試（gcc 即可執行）
 |---|---|
 | KEY0 單擊 | 點擊計數 +1（EEPROM 持久化，靜止 2 秒自動落盤） |
 | KEY0 長按 | 計數歸零（立即落盤） |
-| KEY1 單擊 | OLED 換頁（儀表板 → EEPROM 記錄 → 原始值 → 系統資訊） |
+| KEY1 單擊 | OLED 換頁（儀表板 → EEPROM 記錄 → BLE 鏈路 → 原始值 → 系統資訊） |
 | KEY1 雙擊 | 遙測開/關 |
 | KEY1 長按 | 陀螺儀校正（保持靜置 1 秒） |
+| KEY2~KEY5 | 手柄鍵（裝置端無功能）：press/release 即時經 BLE 上報，GUI「手柄映射」面板以分類選單配置動作 —— 滑鼠鍵（含 x1/x2 側鍵）/四向滾輪（按住連發）/單鍵與組合鍵（按住=按住）/`text:` 輸入整段文字/`run:` 啟動程式。**配置寫入裝置 EEPROM**（手柄自帶設定，換電腦連上即恢復）；keymap.json 為本機備援 |
 
 **LED**：每秒短亮 = 正常；5Hz 快閃 = 降級（IMU 或 EEPROM 離線）。
 
 **CLI**（USART1，115200）：`help / ver / stat / imu / clicks [reset] /
-rate <hz> / cal / save / dump [addr] [len] / oled(面板診斷) / bridge / reboot`
+rate <hz> / cal / save / dump [addr] [len] / oled(面板診斷) / ble(鮑率/佈建) / bridge / reboot`
 
 ## 5. 教學單元（實驗建議）
 

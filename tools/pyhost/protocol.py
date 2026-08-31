@@ -23,6 +23,8 @@ class MsgType(IntEnum):
     EVENT = 0x03
     LOG = 0x04
     INFO = 0x05
+    BTN = 0x06
+    KEYMAP = 0x07
     ACK = 0x7F
     # 主機 → 裝置
     PING = 0x80
@@ -30,6 +32,8 @@ class MsgType(IntEnum):
     RESET_CLICKS = 0x82
     CAL_GYRO = 0x83
     GET_INFO = 0x84
+    SET_KEYMAP = 0x85
+    GET_KEYMAP = 0x86
 
 
 class EventId(IntEnum):
@@ -130,6 +134,50 @@ class Event:
         return f"{name} arg={self.arg}"
 
 
+# 與韌體 mw/button.h 的 btn_event_t 數值一致
+BTN_ACTIONS = {0: "press", 1: "release", 2: "click", 3: "double", 4: "long"}
+BTN_PRESS = 0
+BTN_RELEASE = 1
+
+# 與韌體 PROTO_KEYMAP_SPEC_MAX 一致（映射規格字串上限，ASCII）
+KEYMAP_SPEC_MAX = 35
+
+
+@dataclass
+class KeymapEntry:
+    """裝置端保存的一鍵映射（回應 GET_KEYMAP，每鍵一幀）。"""
+    key_id: int
+    spec: str
+
+    SIZE = 2   # 最小長度（key_id + len）
+
+    @classmethod
+    def parse(cls, b: bytes) -> "KeymapEntry":
+        key_id, ln = b[0], b[1]
+        spec = b[2:2 + ln].decode("ascii", "replace")
+        return cls(key_id, spec)
+
+    def describe(self) -> str:
+        return f"KEY{self.key_id} = {self.spec or '(未設定)'}"
+
+
+@dataclass
+class BtnReport:
+    key_id: int
+    action: int
+
+    _FMT = "<BB"
+    SIZE = struct.calcsize(_FMT)
+
+    @classmethod
+    def parse(cls, b: bytes) -> "BtnReport":
+        return cls(*struct.unpack(cls._FMT, b[: cls.SIZE]))
+
+    def describe(self) -> str:
+        act = BTN_ACTIONS.get(self.action, f"?{self.action}")
+        return f"KEY{self.key_id} {act}"
+
+
 @dataclass
 class Ack:
     req_type: int
@@ -183,6 +231,8 @@ class Frame:
             MsgType.ATTITUDE: Attitude,
             MsgType.SYSSTAT: SysStat,
             MsgType.EVENT: Event,
+            MsgType.BTN: BtnReport,
+            MsgType.KEYMAP: KeymapEntry,
             MsgType.ACK: Ack,
             MsgType.INFO: Info,
         }
@@ -283,3 +333,14 @@ class Commander:
 
     def get_info(self) -> bytes:
         return build_frame(MsgType.GET_INFO, self._next())
+
+    def set_keymap(self, key_id: int, spec: str) -> bytes:
+        """寫入裝置端一鍵映射（spec 須為 ASCII，len 0 = 清除）。"""
+        enc = spec.encode("ascii")   # 非 ASCII 由呼叫端先行攔截
+        if len(enc) > KEYMAP_SPEC_MAX:
+            raise ValueError(f"spec 超過 {KEYMAP_SPEC_MAX} bytes")
+        payload = bytes([key_id, len(enc)]) + enc
+        return build_frame(MsgType.SET_KEYMAP, self._next(), payload)
+
+    def get_keymap(self) -> bytes:
+        return build_frame(MsgType.GET_KEYMAP, self._next())

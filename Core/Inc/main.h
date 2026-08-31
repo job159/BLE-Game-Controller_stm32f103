@@ -59,6 +59,14 @@ void Error_Handler(void);
 #define KEY0_GPIO_Port GPIOA
 #define KEY1_Pin GPIO_PIN_1
 #define KEY1_GPIO_Port GPIOA
+#define KEY2_Pin GPIO_PIN_4
+#define KEY2_GPIO_Port GPIOA
+#define KEY3_Pin GPIO_PIN_5
+#define KEY3_GPIO_Port GPIOA
+#define KEY4_Pin GPIO_PIN_6
+#define KEY4_GPIO_Port GPIOA
+#define KEY5_Pin GPIO_PIN_7
+#define KEY5_GPIO_Port GPIOA
 #define MPU_INT_Pin GPIO_PIN_5
 #define MPU_INT_GPIO_Port GPIOB
 #define MPU_INT_EXTI_IRQn EXTI9_5_IRQn

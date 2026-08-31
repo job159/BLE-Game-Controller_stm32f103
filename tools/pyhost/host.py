@@ -26,8 +26,8 @@ import threading
 import time
 from typing import Optional
 
-from protocol import (Ack, Attitude, Commander, Event, EventId, Frame,
-                      FrameParser, Info, SysStat)
+from protocol import (Ack, Attitude, BtnReport, Commander, Event, EventId,
+                      Frame, FrameParser, Info, KeymapEntry, SysStat)
 from transports import (BleTransport, SerialTransport, TransportError,
                         ble_scan)
 
@@ -77,6 +77,10 @@ class Dashboard:
             health = ("degraded: " + ",".join(bad)) if bad else "healthy"
             self._println(f"[stat] cpu {msg.cpu}%  up {msg.uptime_s}s  "
                           f"boots {msg.boot_count}  err {msg.err_count}  {health}")
+        elif isinstance(msg, BtnReport):
+            self._println(f"[btn] {msg.describe()}")
+        elif isinstance(msg, KeymapEntry):
+            self._println(f"[keymap] {msg.describe()}")
         elif isinstance(msg, Event):
             if msg.event_id == EventId.BOOT:
                 self._println(f"[event] 裝置開機（重置原因旗標 0x{msg.arg:02X}）")

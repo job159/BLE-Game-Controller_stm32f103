@@ -51,6 +51,7 @@ void task_ui_init(void);
 /* ---- comm 服務 ---- */
 void comm_send(uint8_t type, const void *payload, uint8_t len);
 void comm_send_event(uint8_t ev_id, uint32_t arg);
+void comm_send_btn(uint8_t key_id, uint8_t action);
 void comm_set_telemetry_hz(uint8_t hz);   /* 0 = 停止回報；同步持久化 */
 uint8_t comm_telemetry_hz(void);
 const proto_stats_t *comm_proto_stats(void);

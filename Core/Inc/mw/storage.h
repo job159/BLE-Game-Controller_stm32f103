@@ -32,10 +32,11 @@ typedef struct __attribute__((packed)) {
     uint32_t boot_count;       /* 開機次數 */
     int16_t  gyro_bias[3];     /* 陀螺儀零偏（raw LSB） */
     uint8_t  telemetry_hz;     /* BLE 姿態回報頻率 */
-    uint8_t  flags;            /* bit0: gyro_bias 有效 */
+    uint8_t  flags;            /* bit0: gyro_bias 有效；bit1: BLE 模組已佈建 */
 } stor_record_t;
 
 #define STOR_FLAG_GYRO_CAL   (1u << 0)
+#define STOR_FLAG_BLE_PROV   (1u << 1)   /* 模組鮑率已對齊（跳過開機探測） */
 
 typedef struct {
     uint32_t commits;
@@ -69,6 +70,26 @@ const stor_stats_t *stor_stats(void);
 bool stor_is_dirty(void);        /* true = RAM 快取有變更尚未落盤 */
 uint16_t stor_seq(void);         /* 目前記錄序號（0 = 尚無記錄） */
 uint8_t stor_active_slot(void);  /* 目前有效記錄所在槽：0=A 1=B */
+
+/* ---- 手柄映射持久化（EEPROM 0x40 起，每鍵獨立 40B 條目+CRC） ----
+ * 映射規格字串由 PC 端定義語意，裝置僅保存 —— 手柄自帶設定，
+ * 換電腦連上即恢復。寫入走 stor_poll 分散排程（每 tick 最多一條），
+ * 避免 comm 任務被 EEPROM 頁寫入卡住。 */
+#define STOR_KEYMAP_FIRST_KEY  2u
+#define STOR_KEYMAP_KEYS       4u
+#define STOR_KEYMAP_SPEC_MAX   35u
+
+/**
+ * @brief 讀取一鍵的映射規格（RAM 快取，開機自 EEPROM 載入）。
+ * @return 字串長度（0 = 未設定）；key_id 非 2..5 回 APP_EINVAL
+ */
+int stor_keymap_get(uint8_t key_id, char *buf, uint8_t cap);
+
+/**
+ * @brief 設定一鍵映射（len 0 = 清除）。內容相同時直接回 OK 不寫入。
+ * @return APP_OK（已入 RAM，稍後落盤）/ APP_EINVAL / APP_ENOSPACE（EEPROM 太小）
+ */
+int stor_keymap_set(uint8_t key_id, const char *spec, uint8_t len);
 
 #ifdef __cplusplus
 }

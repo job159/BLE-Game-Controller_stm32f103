@@ -37,6 +37,8 @@ extern "C" {
 #define PROTO_T_EVENT       0x03u  /* 非同步事件         */
 #define PROTO_T_LOG         0x04u  /* 文字日誌（保留）   */
 #define PROTO_T_INFO        0x05u  /* 裝置資訊（回應 GET_INFO） */
+#define PROTO_T_BTN         0x06u  /* 按鍵回報（手柄模式；即時 press/release） */
+#define PROTO_T_KEYMAP      0x07u  /* 按鍵映射內容（回應 GET_KEYMAP，每鍵一幀） */
 #define PROTO_T_ACK         0x7Fu  /* 命令回覆           */
 
 /* ---- 訊息型別：主機 → 裝置（bit7 = 1） ---- */
@@ -45,6 +47,14 @@ extern "C" {
 #define PROTO_T_RESET_CLICKS 0x82u
 #define PROTO_T_CAL_GYRO    0x83u
 #define PROTO_T_GET_INFO    0x84u
+#define PROTO_T_SET_KEYMAP  0x85u  /* 寫入一鍵映射（EEPROM 持久化） */
+#define PROTO_T_GET_KEYMAP  0x86u  /* 查詢全部映射 */
+
+/* KEYMAP / SET_KEYMAP 共用 payload（變長，無 packed struct）：
+ *   u8 key_id（2..5） | u8 len（0=未設定，上限 35） | char spec[len]
+ * spec 為 ASCII 映射規格字串（"mouse:left"、"ctrl+c"…），
+ * 語意由 PC 端解讀，裝置只負責保存 —— 裝置是「設定的載體」。 */
+#define PROTO_KEYMAP_SPEC_MAX  35u
 
 /* ---- ACK 狀態碼 ---- */
 #define PROTO_ACK_OK        0u
@@ -83,6 +93,15 @@ typedef struct __attribute__((packed)) {
     uint32_t arg;
 } proto_event_t;
 
+/* 按鍵回報：action 直接沿用 mw/button.h 的 btn_event_t 數值
+ * （0 press / 1 release / 2 click / 3 double / 4 long）。
+ * 手柄映射主要吃 press/release（可表達「按住」語意），
+ * click/double/long 一併上報供 PC 端進階應用。 */
+typedef struct __attribute__((packed)) {
+    uint8_t key_id;     /* 0..5（KEY0..KEY5） */
+    uint8_t action;
+} proto_btn_t;
+
 typedef struct __attribute__((packed)) {
     uint8_t req_type;
     uint8_t req_seq;
@@ -98,6 +117,7 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(proto_attitude_t) == 16, "attitude payload size");
 _Static_assert(sizeof(proto_sysstat_t) == 12, "sysstat payload size");
 _Static_assert(sizeof(proto_event_t) == 5, "event payload size");
+_Static_assert(sizeof(proto_btn_t) == 2, "btn payload size");
 _Static_assert(sizeof(proto_ack_t) == 3, "ack payload size");
 _Static_assert(sizeof(proto_info_t) == 24, "info payload size");
 

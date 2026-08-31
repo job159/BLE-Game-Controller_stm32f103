@@ -1,17 +1,17 @@
 /**
  * @file    task_btn.c
- * @brief   按鍵任務：掃描 + 事件 → 業務動作對映。
+ * @brief   按鍵任務：6 鍵掃描 + 事件 → 業務動作 / BLE 上報。
  *
  * 鍵位配置：
- *   KEY0 單擊     累計點擊次數（寫入 EEPROM，延遲落盤防磨耗）
- *   KEY0 長按     點擊次數歸零（立即落盤）
- *   KEY1 單擊     OLED 換頁
- *   KEY1 雙擊     遙測開/關切換
- *   KEY1 長按     觸發陀螺儀校正
+ *   KEY0 單擊/長按  點擊計數 +1（EEPROM 持久化）/ 計數歸零
+ *   KEY1 單擊/雙擊/長按  OLED 換頁 / 遙測開關 / 陀螺儀校正
+ *   KEY2~KEY5       手柄鍵：無本地功能，事件即時上報 PC 端
+ *                   由 host_gui.py 映射成鍵盤/滑鼠動作
  *
- * KEY0 停用雙擊偵測 → 單擊零延遲（計數手感優先）；
- * KEY1 保留雙擊 → 單擊有 250ms 確認延遲（換頁無感）。
- * 同一顆狀態機、不同組態 —— 延遲與功能的取捨顯式化。
+ * 所有按鍵的事件（press/release/click/double/long）一律經
+ * PROTO_T_BTN 上報 —— PC 端要拿 KEY0/KEY1 做進階應用也拿得到。
+ * 手柄鍵停用雙擊偵測：press/release 本就即時，停用後 click
+ * 也零延遲，把整條鏈路的延遲留給 BLE 而不是韌體。
  */
 #include "app/app_tasks.h"
 #include "app/app_config.h"
@@ -22,22 +22,21 @@
 #include "mw/storage.h"
 #include "drivers/imu.h"
 
-#define BTN_ID_KEY0  0u
-#define BTN_ID_KEY1  1u
+#define KEY_COUNT 6u
 
-static btn_t s_key0;
-static btn_t s_key1;
+static btn_t s_keys[KEY_COUNT];
 
-static bool key0_read(void *user)
+static bool key_read(void *user)
 {
-    APP_UNUSED(user);
-    return BSP_KEY0_PRESSED();
-}
-
-static bool key1_read(void *user)
-{
-    APP_UNUSED(user);
-    return BSP_KEY1_PRESSED();
+    switch ((uintptr_t)user) {
+    case 0u: return BSP_KEY0_PRESSED();
+    case 1u: return BSP_KEY1_PRESSED();
+    case 2u: return BSP_KEY2_PRESSED();
+    case 3u: return BSP_KEY3_PRESSED();
+    case 4u: return BSP_KEY4_PRESSED();
+    case 5u: return BSP_KEY5_PRESSED();
+    default: return false;
+    }
 }
 
 static void on_key0(btn_event_t evt)
@@ -108,11 +107,16 @@ static void on_key1(btn_event_t evt)
 static void btn_dispatch(uint8_t id, btn_event_t evt, void *user)
 {
     APP_UNUSED(user);
-    if (id == BTN_ID_KEY0) {
+
+    /* 全鍵事件上報（btn_event_t 數值即協定 action 碼） */
+    comm_send_btn(id, (uint8_t)evt);
+
+    if (id == 0u) {
         on_key0(evt);
-    } else {
+    } else if (id == 1u) {
         on_key1(evt);
     }
+    /* KEY2~KEY5：純上報，本地無動作 */
 }
 
 void task_btn_init(void)
@@ -122,15 +126,21 @@ void task_btn_init(void)
         .long_ms       = APP_BTN_LONG_MS,
         .double_gap_ms = APP_BTN_DOUBLE_GAP_MS,
     };
-    btn_init(&s_key0, BTN_ID_KEY0, &cfg, key0_read, NULL, btn_dispatch, NULL);
-    btn_init(&s_key1, BTN_ID_KEY1, &cfg, key1_read, NULL, btn_dispatch, NULL);
-    btn_enable_double(&s_key0, false);   /* 計數鍵：單擊零延遲 */
+    for (uint8_t i = 0u; i < KEY_COUNT; i++) {
+        btn_init(&s_keys[i], i, &cfg, key_read, (void *)(uintptr_t)i,
+                 btn_dispatch, NULL);
+        if (i != 1u) {
+            /* 僅 KEY1 需要雙擊；其餘停用換取零延遲單擊 */
+            btn_enable_double(&s_keys[i], false);
+        }
+    }
 }
 
 void task_btn(void)
 {
     uint32_t now = HAL_GetTick();
-    btn_poll(&s_key0, now);
-    btn_poll(&s_key1, now);
+    for (uint8_t i = 0u; i < KEY_COUNT; i++) {
+        btn_poll(&s_keys[i], now);
+    }
     bsp_wdg_checkin(WDG_TASK_BTN);
 }

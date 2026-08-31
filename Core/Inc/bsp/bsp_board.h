@@ -13,8 +13,9 @@
  *   I2C2  PB10=SCL / PB11=SDA : SSD1306 OLED(0x3C)（顯示匯流排，走 DMA）
  *   USART1 PA9=TX / PA10=RX   : 除錯主控台 / CLI（115200 8N1）
  *   USART2 PA2=TX / PA3=RX    : nRF52832 BLE 透傳模組（115200 8N1）
- *   PA0 = KEY0（低電位按下，內部上拉）
- *   PA1 = KEY1（低電位按下，內部上拉）
+ *   PA0 = KEY0（低電位按下，內部上拉；點擊計數）
+ *   PA1 = KEY1（同上；UI 操作）
+ *   PA4~PA7 = KEY2~KEY5（同上；手柄鍵，事件經 BLE 上報由 PC 映射）
  *   PB5 = MPU6050 INT（下降緣 EXTI）
  *   PC13 = 狀態 LED（低電位點亮）
  */
@@ -68,6 +69,10 @@ extern DMA_HandleTypeDef  hdma_i2c2_tx;
 /* ---- 按鍵原始讀取（true = 實體按下；低電位有效） ---- */
 #define BSP_KEY0_PRESSED()  (HAL_GPIO_ReadPin(KEY0_GPIO_Port, KEY0_Pin) == GPIO_PIN_RESET)
 #define BSP_KEY1_PRESSED()  (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
+#define BSP_KEY2_PRESSED()  (HAL_GPIO_ReadPin(KEY2_GPIO_Port, KEY2_Pin) == GPIO_PIN_RESET)
+#define BSP_KEY3_PRESSED()  (HAL_GPIO_ReadPin(KEY3_GPIO_Port, KEY3_Pin) == GPIO_PIN_RESET)
+#define BSP_KEY4_PRESSED()  (HAL_GPIO_ReadPin(KEY4_GPIO_Port, KEY4_Pin) == GPIO_PIN_RESET)
+#define BSP_KEY5_PRESSED()  (HAL_GPIO_ReadPin(KEY5_GPIO_Port, KEY5_Pin) == GPIO_PIN_RESET)
 
 #ifdef __cplusplus
 }

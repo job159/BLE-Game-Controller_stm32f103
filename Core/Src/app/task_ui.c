@@ -6,8 +6,9 @@
  *   0 SPLASH   開機畫面（1.5 秒後自動進入 DASH）
  *   1 DASH     姿態儀表板（roll/pitch/yaw 大字 + 點擊數 + 遙測狀態）
  *   2 STOR     EEPROM 記錄檢視（含未落盤 '*' 指示 —— 延遲寫入看得見）
- *   3 RAW      感測原始值（debug 視角）
- *   4 SYS      系統資訊（版本/運行時間/CPU/錯誤統計）
+ *   3 COMM     BLE 鏈路（鮑率/佈建狀態/封包/位元組/錯誤 —— 現場診斷）
+ *   4 RAW      感測原始值（debug 視角）
+ *   5 SYS      系統資訊（版本/運行時間/CPU/儲存統計）
  *
  * LED 語言（狀態一眼可讀，量產除錯的老朋友）：
  *   短亮 100ms/秒  = 正常心跳
@@ -31,9 +32,10 @@
 #define PAGE_SPLASH  0u
 #define PAGE_DASH    1u
 #define PAGE_STOR    2u
-#define PAGE_RAW     3u
-#define PAGE_SYS     4u
-#define PAGE_COUNT   5u      /* 換頁循環只在 1..4 之間 */
+#define PAGE_COMM    3u
+#define PAGE_RAW     4u
+#define PAGE_SYS     5u
+#define PAGE_COUNT   6u      /* 換頁循環只在 1..5 之間 */
 
 #define SPLASH_MS    1500u
 #define TOAST_MS     1500u
@@ -127,8 +129,8 @@ static void draw_stor(void)
 
     gfx_text(0, 0, 1, "EEPROM");
     if (stor_healthy()) {
-        /* 顯示實際掃描到的裝置位址（模組焊法各異：0x50~0x57） */
-        gfx_printf((int16_t)(gfx_width() - 60), 0, 1, "0x%02x %3uB",
+        /* 顯示實際掃描到的位址與容量（幾何可能被自檢修正，如 C32） */
+        gfx_printf((int16_t)(gfx_width() - 66), 0, 1, "0x%02x %4uB",
                    at24_dev_addr(), (unsigned)at24_size());
     } else {
         gfx_printf((int16_t)(gfx_width() - 48), 0, 1, "OFFLINE");
@@ -171,6 +173,33 @@ static void draw_raw(void)
                (unsigned long)imu_get()->sample_count);
 }
 
+/* BLE 鏈路頁：鮑率一眼可見（右上大位），佈建/流量/錯誤現場診斷。
+ * 判讀口訣：TXB 在長、對端卻沒收到 → 查模組鮑率（本頁 BAUD）；
+ * RXB 在長但 RXF 不動 → 對端鮑率錯或資料損毀（ERR 同步觀察）。 */
+static void draw_comm(void)
+{
+    const bsp_uart_stats_t *bs = ble_stats();
+    const proto_stats_t *ps = comm_proto_stats();
+
+    gfx_text(0, 0, 1, "BLE LINK");
+    gfx_printf((int16_t)(gfx_width() - 42u), 0, 1, "%7lu",
+               (unsigned long)ble_get_baud());
+    gfx_hline(0, 9, (int16_t)gfx_width(), true);
+
+    gfx_printf(0, 12, 1, "PROV %c   TELEM %uHz",
+               (stor_get()->flags & STOR_FLAG_BLE_PROV) ? 'Y' : 'N',
+               (unsigned)comm_telemetry_hz());
+    gfx_printf(0, 22, 1, "TXF %-6lu RXF %lu",
+               (unsigned long)app_state()->comm_tx_frames,
+               (unsigned long)ps->rx_frames);
+    gfx_printf(0, 32, 1, "TXB %-6lu RXB %lu",
+               (unsigned long)bs->tx_bytes, (unsigned long)bs->rx_bytes);
+    gfx_printf(0, (int16_t)(gfx_height() - 8u), 1, "ERR %lu CRC %lu %s",
+               (unsigned long)bs->hw_errors,
+               (unsigned long)ps->crc_errors,
+               app_state()->bridge_mode ? "BRG" : "");
+}
+
 static void draw_sys(void)
 {
     char up[10];
@@ -182,12 +211,9 @@ static void draw_sys(void)
     gfx_printf(0, 12, 1, "UP  %s  CPU %u%%", up, (unsigned)sched_cpu_percent());
     gfx_printf(0, 22, 1, "BOOT %lu  RST %s",
                (unsigned long)stor_get()->boot_count, bsp_reset_cause_str());
-    gfx_printf(0, 32, 1, "BLE rx%lu tx%lu",
-               (unsigned long)comm_proto_stats()->rx_frames,
-               (unsigned long)app_state()->comm_tx_frames);
-    gfx_printf(0, 42, 1, "CRC e%lu  EEP w%lu",
-               (unsigned long)comm_proto_stats()->crc_errors,
-               (unsigned long)stor_stats()->commits);
+    gfx_printf(0, 32, 1, "EEP w%lu f%lu",
+               (unsigned long)stor_stats()->commits,
+               (unsigned long)stor_stats()->commit_fails);
     gfx_printf(0, (int16_t)(gfx_height() - 8u), 1, "%s %s %s",
                imu_healthy() ? "IMU+" : "IMU-",
                stor_healthy() ? "EEP+" : "EEP-",
@@ -284,6 +310,7 @@ void task_ui(void)
         case PAGE_SPLASH: draw_splash(); break;
         case PAGE_DASH:   draw_dash();   break;
         case PAGE_STOR:   draw_stor();   break;
+        case PAGE_COMM:   draw_comm();   break;
         case PAGE_RAW:    draw_raw();    break;
         case PAGE_SYS:    draw_sys();    break;
         default:          app->ui_page = PAGE_DASH; break;

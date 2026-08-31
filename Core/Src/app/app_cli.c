@@ -18,6 +18,7 @@
 #include "drivers/drv_at24cxx.h"
 #include "drivers/drv_ssd1306.h"
 #include "drivers/drv_gfx.h"
+#include "drivers/drv_blemod.h"
 #include "stm32f1xx_hal.h"      /* HAL_GetTick */
 #include <stdlib.h>
 #include <string.h>
@@ -202,10 +203,35 @@ static int cmd_dump(int argc, char **argv)
 static int cmd_ble(int argc, char **argv)
 {
     if (argc < 2) {
-        dbg_printf("usart2 baud = %lu (usage: ble <1200..921600>)\r\n",
-                   (unsigned long)ble_get_baud());
+        dbg_printf("usart2 baud = %lu  provisioned %d\r\n",
+                   (unsigned long)ble_get_baud(),
+                   (stor_get()->flags & STOR_FLAG_BLE_PROV) ? 1 : 0);
+        dbg_printf("usage: ble <1200..921600> | ble auto [target]\r\n");
         return APP_OK;
     }
+
+    if (strcmp(argv[1], "auto") == 0) {
+        /* 模組自動佈建（換新模組後用；BLE 連線中會探不到） */
+        uint32_t target = (argc >= 3) ? strtoul(argv[2], NULL, 0) : 115200u;
+        uint32_t found = 0u;
+        dbg_printf("autobaud probing (module must be BLE-disconnected)...\r\n");
+        blemod_result_t r = blemod_autobaud(target, &found);
+        if (r == BLEMOD_OK_FIXED) {
+            dbg_printf("module baud %lu -> %lu OK\r\n",
+                       (unsigned long)found, (unsigned long)target);
+        } else if (r == BLEMOD_OK_ALREADY) {
+            dbg_printf("module already at %lu\r\n", (unsigned long)target);
+        } else {
+            dbg_printf("no AT response (absent / connected / non-AT dialect)\r\n");
+        }
+        if (r != BLEMOD_NOT_FOUND) {
+            stor_get()->flags |= STOR_FLAG_BLE_PROV;
+            stor_mark_dirty();
+            (void)stor_commit_now();
+        }
+        return (r == BLEMOD_NOT_FOUND) ? APP_ENODEV : APP_OK;
+    }
+
     uint32_t baud = strtoul(argv[1], NULL, 0);
     int rc = ble_set_baud(baud);
     if (rc == APP_OK) {

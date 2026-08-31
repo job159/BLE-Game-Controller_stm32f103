@@ -22,7 +22,10 @@
 #include "mw/cli.h"
 #include "drivers/imu.h"
 #include "drivers/drv_ssd1306.h"
+#include "drivers/drv_blemod.h"
 #include "stm32f1xx_hal.h"      /* SystemCoreClock */
+#include <stdio.h>
+#include <string.h>
 
 static app_state_t s_app;
 int g_task_id_comm_tx = -1;
@@ -66,12 +69,46 @@ void app_main_init(void)
     stor_get()->boot_count++;
     (void)stor_commit_now();   /* 開機次數立即落盤（EEPROM 離線時安全失敗） */
 
+    /* --- 2.5 BLE 模組自動佈建（免 USB-TTL；見 drv_blemod.h） ---
+     * 模組出廠鮑率常與韌體不符（HC-42 = 9600）。未佈建過才探測，
+     * 成功即記旗標，之後開機零成本。模組被 BLE 連線中會探不到，
+     * 下次開機自動再試。 */
+#if APP_BLE_AUTOBAUD
+    blemod_result_t ble_prov = BLEMOD_NOT_FOUND;
+    uint32_t ble_found = 0u;
+    uint32_t ble_target = ble_get_baud();   /* CubeMX 設定值 = 工作鮑率 */
+    bool ble_ran = false;
+    if (stor_get()->flags & STOR_FLAG_BLE_PROV) {
+        dbg_printf("[ble ] provisioned, skip autobaud ('ble auto' to redo)\r\n");
+    } else {
+        ble_ran = true;
+        ble_prov = blemod_autobaud(ble_target, &ble_found);
+        if (ble_prov == BLEMOD_OK_FIXED) {
+            dbg_printf("[ble ] module baud %lu -> %lu OK\r\n",
+                       (unsigned long)ble_found, (unsigned long)ble_target);
+        } else if (ble_prov == BLEMOD_OK_ALREADY) {
+            dbg_printf("[ble ] module already at %lu\r\n",
+                       (unsigned long)ble_target);
+        } else {
+            dbg_printf("[ble ] no AT response (absent/connected?), will retry next boot\r\n");
+        }
+        if (ble_prov != BLEMOD_NOT_FOUND) {
+            stor_get()->flags |= STOR_FLAG_BLE_PROV;
+            stor_mark_dirty();
+            (void)stor_commit_now();
+        }
+    }
+#endif
+
     /* --- 3. IMU（先恢復校正值再初始化） --- */
     if (stor_get()->flags & STOR_FLAG_GYRO_CAL) {
-        imu_set_gyro_bias(stor_get()->gyro_bias);
+        /* stor_record_t 為 packed：經對齊的區域副本傳遞，
+         * 避免把未對齊保證的指標交給一般函式（-Waddress-of-packed-member） */
+        int16_t bias[3];
+        memcpy(bias, stor_get()->gyro_bias, sizeof(bias));
+        imu_set_gyro_bias(bias);
         dbg_printf("[imu ] gyro bias restored (%d,%d,%d)\r\n",
-                   stor_get()->gyro_bias[0], stor_get()->gyro_bias[1],
-                   stor_get()->gyro_bias[2]);
+                   bias[0], bias[1], bias[2]);
     }
     rc = imu_init();
     dbg_printf("[imu ] init %s (backend: %s)\r\n",
@@ -84,6 +121,15 @@ void app_main_init(void)
     dbg_printf("[oled] init %s\r\n", (rc == APP_OK) ? "ok" : "FAILED - no display");
 #endif
     task_ui_init();
+#if APP_BLE_AUTOBAUD
+    /* 免 PC 的佈建結果回饋：改寫成功以 OLED 提示條顯示 */
+    if (ble_ran && (ble_prov == BLEMOD_OK_FIXED)) {
+        char msg[22];
+        (void)snprintf(msg, sizeof(msg), "BLE %lu>%lu",
+                       (unsigned long)ble_found, (unsigned long)ble_target);
+        ui_notify(msg);
+    }
+#endif
 
     /* --- 5. 通訊與按鍵 --- */
     task_comm_init();

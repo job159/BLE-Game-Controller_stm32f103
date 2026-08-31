@@ -31,6 +31,9 @@ int at24_probe(void);
 /** @return 掃描到的 7-bit 裝置位址；0 = 尚未找到 */
 uint8_t at24_dev_addr(void);
 
+/** @return 執行期定址長度 1/2（開機自檢可能自動修正型號誤設） */
+uint8_t at24_addr_bytes(void);
+
 /** @return 總容量（bytes），依 APP_AT24_TYPE */
 uint16_t at24_size(void);
 

@@ -10,7 +10,7 @@
 
 /* ---- 韌體識別 ---- */
 #define APP_FW_NAME             "imu-ble-node"
-#define APP_FW_VERSION          "1.0.0"
+#define APP_FW_VERSION          "1.1.0"
 #define APP_PROTO_VERSION       1        /* BLE 二進位協定版本 */
 
 /* ---- 功能開關 ---- */
@@ -21,6 +21,11 @@
 
 #define APP_USE_CLI             1        /* USART1 除錯命令列 */
 #define APP_USE_OLED            1        /* OLED 顯示 */
+
+/* BLE 模組開機自動佈建：探測模組鮑率、不符時自動下 AT+BAUD 對齊
+ * （免 USB-TTL）。成功後記 EEPROM 旗標，之後開機零成本跳過；
+ * 換新模組用 CLI `ble auto` 重跑。詳見 drivers/drv_blemod.h。 */
+#define APP_BLE_AUTOBAUD        1
 
 /* ---- OLED 面板變體 ----
  * 市售模組實際晶片混雜（SSD1306/SSD1315/SH1106）。畫面異常時
@@ -43,7 +48,7 @@
 #define AT24C16   4
 #define AT24C32   5
 #define AT24C64   6
-#define APP_AT24_TYPE           AT24C32
+#define APP_AT24_TYPE           AT24C02
 
 /* ---- 取樣與更新率 ---- */
 #define APP_IMU_PERIOD_MS       10       /* 100Hz 姿態解算 */

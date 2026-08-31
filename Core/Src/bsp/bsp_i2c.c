@@ -109,12 +109,21 @@ int bsp_i2c_probe(bsp_i2c_bus_t bus, uint8_t addr7, uint32_t timeout_ms)
     HAL_StatusTypeDef st = HAL_I2C_IsDeviceReady(c->h, (uint16_t)(addr7 << 1),
                                                  1u, timeout_ms);
     if (st == HAL_BUSY) {
-        /* HAL_BUSY ≠ 裝置未回應，而是匯流排卡死（SDA 被拉住）。
-         * F103 上電殘留/熱插拔的典型症狀 —— 立刻復原並重試一次，
-         * 否則開機第一次探測失敗會讓上層誤判裝置不存在。 */
-        (void)bsp_i2c_recover(bus);
+        /* HAL_BUSY 有兩種：
+         *  (a) 前一筆 NAK 的 STOP 還在收尾（µs 級瞬態）——EEPROM
+         *      ACK polling 時的常態，等一下重試即可；
+         *  (b) 匯流排真的卡死（F103 上電殘留/熱插拔）。
+         * 先短暫等待重試，仍 BUSY 才動用匯流排復原 —— 否則寫入
+         * 週期中的輪詢會觸發「復原風暴」把 EEPROM 寫入炸掉
+         * （曾為實際回歸 bug，勿改回立即復原）。 */
+        bsp_delay_us(200);
         st = HAL_I2C_IsDeviceReady(c->h, (uint16_t)(addr7 << 1),
                                    1u, timeout_ms);
+        if (st == HAL_BUSY) {
+            (void)bsp_i2c_recover(bus);
+            st = HAL_I2C_IsDeviceReady(c->h, (uint16_t)(addr7 << 1),
+                                       1u, timeout_ms);
+        }
     }
     /* NAK 是常態（ack polling / 位址掃描），不列入連錯統計 */
     return (st == HAL_OK) ? APP_OK : APP_ENODEV;
