@@ -1,0 +1,3 @@
+pyserial>=3.5
+PySide6>=6.5          # 圖形介面（host_gui.py）需要；純 CLI 可不裝
+# bleak>=0.21         # BLE 傳輸（--ble / GUI 的 BLE 模式）需要，可選

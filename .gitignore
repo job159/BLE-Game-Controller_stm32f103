@@ -1,0 +1,61 @@
+# =====================================================================
+# IMU-BLE Node 版本庫策略（詳見 README §2.1）：
+#   進版本庫：.ioc（單一事實來源）、.project/.cproject（clone 即可開啟）、
+#             Core/{app,bsp,mw,drivers}、main.c/main.h（含 USER CODE 掛載點）、
+#             Docs、tools、tests
+#   不進：CubeMX「Generate Code 可完整再生」的一切、建置輸出、
+#         第三方授權受限原始碼（eMPL）
+# =====================================================================
+
+# ---- 建置輸出 ----
+Debug/
+Release/
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+
+# ---- STM32CubeIDE / CubeMX 產物（Generate Code 會再生） ----
+.settings/
+*.launch
+.mxproject
+*.ioc.bak
+
+# HAL 程式庫與 CMSIS（CubeMX 依 .ioc 複製）
+Drivers/STM32F1xx_HAL_Driver/
+Drivers/CMSIS/
+
+# 啟動檔與連結腳本
+Core/Startup/
+*.ld
+
+# 產生的系統檔（main.c/main.h 刻意「不在」此清單：
+# 它們帶著 USER CODE 區塊的應用掛載點，必須入庫）
+Core/Src/stm32f1xx_it.c
+Core/Src/stm32f1xx_hal_msp.c
+Core/Src/system_stm32f1xx.c
+Core/Src/syscalls.c
+Core/Src/sysmem.c
+Core/Inc/stm32f1xx_it.h
+Core/Inc/stm32f1xx_hal_conf.h
+
+# ---- 第三方：InvenSense eMPL（授權限制，使用者自行放入，不隨庫散布） ----
+Drivers/eMPL/*
+!Drivers/eMPL/README_PUT_EMPL_HERE.md
+
+# ---- Python（tools/pyhost） ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+tools/pyhost/*.csv
+
+# ---- 主機端單元測試建置輸出 ----
+tests/host/run_tests
+tests/host/run_tests.exe
+
+# ---- 編輯器 / 作業系統 ----
+.vscode/
+Thumbs.db
+desktop.ini
