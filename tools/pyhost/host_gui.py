@@ -48,7 +48,9 @@ from keymapper import AirMouse, KeyMapper, MapError, PRESET_GROUPS
 
 KEYMAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "keymap.json")
-GAMEPAD_KEYS = (2, 3, 4, 5)   # 手柄鍵（KEY0/1 有裝置本地功能，不開放映射）
+GAMEPAD_KEYS = (0, 1, 2, 3, 4, 5)   # 全部按鍵皆可映射
+DEVICE_KEYS = (2, 3, 4, 5)          # 僅這些持久化到裝置 EEPROM；
+                                    # KEY0/1 有本地功能，映射僅存本機 keymap.json
 DEFAULT_KEYMAP = {2: "mouse:left", 3: "mouse:right",
                   4: "scroll:up", 5: "scroll:down"}
 
@@ -466,7 +468,7 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_keymap(self) -> QGroupBox:
-        box = QGroupBox("手柄映射（KEY2~KEY5）")
+        box = QGroupBox("手柄映射（KEY0~KEY5；* = 僅本機）")
         grid = QGridLayout(box)
 
         self.km_dots = {}
@@ -476,7 +478,14 @@ class MainWindow(QMainWindow):
             dot.setStyleSheet(f"color:{C_UNKNOWN};")
             self.km_dots[key_id] = dot
             grid.addWidget(dot, row, 0)
-            grid.addWidget(QLabel(f"KEY{key_id}"), row, 1)
+            local = key_id not in DEVICE_KEYS
+            lab = QLabel(f"KEY{key_id}" + ("*" if local else ""))
+            if local:
+                lab.setToolTip(
+                    "此鍵在裝置端另有本地功能（KEY0 計數/空中滑鼠、"
+                    "KEY1 換頁/校正）——\n映射會與本地功能並存，且僅存於"
+                    "本機 keymap.json（不寫入裝置）")
+            grid.addWidget(lab, row, 1)
 
             combo = QComboBox()
             combo.setEditable(True)
@@ -585,6 +594,8 @@ class MainWindow(QMainWindow):
         """使用者編輯 → 同步寫入裝置 EEPROM（手柄自帶配置）。"""
         if self._km_syncing or (self.transport is None):
             return
+        if key_id not in DEVICE_KEYS:
+            return   # KEY0/1 有本地功能，映射僅存本機 keymap.json
         try:
             enc = spec.encode("ascii")
         except UnicodeEncodeError:

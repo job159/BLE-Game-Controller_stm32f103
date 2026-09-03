@@ -281,6 +281,24 @@ def save_config(cfg: dict) -> None:
         pass
 
 
+def make_font(size, bold=False):
+    """優先載入系統中文字型（否則畫面中文會變成方框）；找不到才退回英文。"""
+    import pygame
+    if not pygame.font.get_init():
+        pygame.font.init()
+    for name in ("microsoftjhenghei", "microsoftyahei", "notosanstc",
+                 "notosanscjktc", "pmingliu", "mingliu", "simhei"):
+        try:
+            path = pygame.font.match_font(name)
+        except Exception:
+            path = None
+        if path:
+            f = pygame.font.Font(path, size)
+            f.set_bold(bold)
+            return f
+    return pygame.font.SysFont("arial,dejavusans", size, bold=bold)
+
+
 class Game:
     W, H = 1280, 720
 
@@ -291,9 +309,9 @@ class Game:
         pygame.display.set_caption("IMU Kart — 手柄賽車")
         self.screen = pygame.display.set_mode((self.W, self.H))
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont("consolas,arial", 22)
-        self.font_big = pygame.font.SysFont("consolas,arial", 64, bold=True)
-        self.font_mid = pygame.font.SysFont("consolas,arial", 34, bold=True)
+        self.font = make_font(22)
+        self.font_big = make_font(64, bold=True)
+        self.font_mid = make_font(34, bold=True)
 
         self.cfg = load_config()
         self.track = Track()

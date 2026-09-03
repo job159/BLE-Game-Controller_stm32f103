@@ -1,8 +1,10 @@
 {
   "map": {
-    "2": "mouse:left",
-    "3": "mouse:right",
-    "4": "scroll:up",
-    "5": "scroll:down"
+    "0": "scroll:up",
+    "1": "scroll:down",
+    "2": "left",
+    "3": "right",
+    "4": "space",
+    "5": "up"
   }
 }
