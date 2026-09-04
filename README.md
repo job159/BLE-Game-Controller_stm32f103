@@ -2,13 +2,13 @@
 
 以「真實產品等級」的做法打造的教學韌體：STM32F103C8T6 讀取 MPU6050
 姿態，經 nRF52832 BLE 模組回傳 PC；OLED 即時儀表板、EEPROM 參數持久化、
-雙按鍵人機介面、序列埠 CLI、看門狗與全面的健康監控。
+多按鍵（8 鍵）人機介面、序列埠 CLI、看門狗與全面的健康監控。
 
 ```
                     ┌───────────────┐
    MPU6050 ──I2C1──▶│               │──USART2──▶ nRF52832 ─)))BLE(((─ PC (Python)
    AT24Cxx ──I2C1──▶│  STM32F103    │──USART1──▶ USB-TTL → CLI 終端機
-   KEY0/KEY1 ─GPIO─▶│  (72MHz)      │──I2C2+DMA▶ SSD1306 OLED 128x64
+   KEY0~7   ─GPIO─▶│  (72MHz)      │──I2C2+DMA▶ SSD1306 OLED 128x64
    MPU INT ──EXTI──▶│               │──GPIO────▶ 狀態 LED (PC13)
                     └───────────────┘
 ```
@@ -37,9 +37,10 @@
 | I2C2 SCL / SDA | PB10 / PB11 | OLED (SSD1306/Y00429) | 顯示匯流排，DMA 刷新 |
 | USART1 TX / RX | PA9 / PA10 | USB-TTL RX / TX | CLI，115200 8N1 |
 | USART2 TX / RX | PA2 / PA3 | nRF52832 RXD / TXD | BLE 透傳，9600 8N1（遷就 HC-42 出廠值；交叉接） |
-| KEY0 | PA0 | 按鍵另一端接 GND | 內部上拉，低電位按下（點擊計數） |
+| KEY0 | PB0 | 按鍵另一端接 GND | 內部上拉，低電位按下（本地功能：計數/空中滑鼠/歸零） |
 | KEY1 | PA1 | 按鍵另一端接 GND | 內部上拉，低電位按下（UI 操作） |
 | KEY2~KEY5 | PA4~PA7 | 按鍵另一端接 GND | 手柄鍵：事件上報 PC，由 GUI 映射鍵盤/滑鼠 |
+| KEY6 / KEY7 | PA0 / PB1 | 按鍵另一端接 GND | 手柄鍵（PB0/PB1 為新腳位，可自由選其他空腳） |
 | LED | PC13 | 板載 LED | 低電位點亮 |
 | 電源 | 3.3V / GND | 所有模組共地 | 全系統 3.3V；模組板載 I2C 上拉即可 |
 
@@ -126,6 +127,11 @@ python host.py --scan
 **賽車遊戲**：`python kart_game.py --ble --name HC-42` —— 裝置傾斜當方向盤、
 甩尾鍵漂移集氣、氮氣鍵爆發（F1 遊戲內綁定實體鍵，鍵盤也可玩）。
 
+**平台跳躍遊戲**：`python platformer.py` —— 原創角色 VOLT 的經典橫向平台遊戲
+（蘑菇變大/火力花射火球/踩殼踢殼/頂磚/檢查點/雙關卡），四鍵操控
+（←→/Space/A）；手柄映射 KEY2=left、KEY3=right、KEY4=space、KEY5=a
+即可用裝置遊玩。
+
 ### 2.4 BLE 模組準備
 
 任何「透傳（transparent UART）」韌體的 nRF52832 模組皆可，
@@ -163,7 +169,7 @@ Core/
     bsp/       板級：bsp_board.h(腳位總表)、bsp_uart、bsp_i2c、bsp_wdg、bsp
   Src/main.c   CubeMX 進入點（USER CODE 掛 app_main_init/loop）
 Drivers/eMPL/  （自行放入 InvenSense eMPL，見 Docs/dmp_porting.md）
-Docs/          protocol.md(協定)、architecture.md(設計)、engineering_review.md(工程復盤)、dmp_porting.md
+Docs/          protocol.md(協定)、architecture.md(設計)、oled_guide.md(OLED畫面看懂指南)、engineering_review.md(工程復盤)、dmp_porting.md
 tools/pyhost/  Python 主機工具（GUI/CLI/診斷）與 kart_game.py 賽車遊戲
 tests/host/    PC 端單元測試（gcc 即可執行）
 ```
@@ -183,7 +189,7 @@ tests/host/    PC 端單元測試（gcc 即可執行）
 | KEY1 單擊 | OLED 換頁（儀表板 → EEPROM 記錄 → BLE 鏈路 → 原始值 → 系統資訊） |
 | KEY1 雙擊 | 遙測開/關 |
 | KEY1 長按 | 陀螺儀校正（保持靜置 1 秒） |
-| KEY2~KEY5 | 手柄鍵（裝置端無功能）：press/release 即時經 BLE 上報，GUI「手柄映射」面板以分類選單配置動作 —— 滑鼠鍵（含 x1/x2 側鍵）/四向滾輪（按住連發）/單鍵與組合鍵（按住=按住）/`text:` 輸入整段文字/`run:` 啟動程式。**配置寫入裝置 EEPROM**（手柄自帶設定，換電腦連上即恢復）；keymap.json 為本機備援 |
+| KEY2~KEY5 / KEY6 / KEY7 | 手柄鍵（裝置端無本地功能）：press/release 即時經 BLE 上報，GUI「手柄映射」面板以分類選單配置動作（分「方向鍵/其他」兩區）—— 滑鼠鍵（含 x1/x2 側鍵）/四向滾輪（按住連發）/單鍵與組合鍵（按住=按住）/`text:` 輸入整段文字/`run:` 啟動程式。KEY2~5 **配置寫入裝置 EEPROM**（換電腦連上即恢復）；KEY6/KEY7 映射存本機 keymap.json |
 
 **LED**：每秒短亮 = 正常；5Hz 快閃 = 降級（IMU 或 EEPROM 離線）。
 
@@ -194,7 +200,7 @@ rate <hz> / cal / save / dump [addr] [len] / oled(面板診斷) / ble(鮑率/佈
 
 | # | 主題 | 動手做 | 對應程式碼 |
 |---|---|---|---|
-| 1 | 分層與可移植性 | 把 KEY1 改到 PB0：只允許改 CubeMX + `bsp_board.h`，驗證上層零修改 | `bsp/` |
+| 1 | 分層與可移植性 | 把 KEY1 改到 PB8：只允許改 CubeMX + `bsp_board.h`，驗證上層零修改 | `bsp/` |
 | 2 | UART 三種收法 | 對比輪詢/逐位元組中斷/DMA+IDLE 的 CPU 佔用（`stat` 觀測） | `bsp_uart.c` |
 | 3 | 環形緩衝區 | 在 PC 端跑 `tests/host`，把 `rb_put` 改壞一行，觀察哪個測試抓到 | `mw/ringbuf.c` |
 | 4 | 通訊協定 | 加一個 `PROTO_T_SET_CONTRAST` 命令調 OLED 亮度（韌體+Python 兩端） | `mw/proto.*`、`task_comm.c` |

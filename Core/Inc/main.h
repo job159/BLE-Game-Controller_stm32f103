@@ -7,8 +7,8 @@
   ******************************************************************************
   * @attention
   *
-  * IMU-BLE Node ??�學專�?��?�STM32F103C8T6�?
-  * ?��檔由 CubeMX ?��???/維護，�?�用程�?�碼�?律放?�� USER CODE ??塊內??
+  * IMU-BLE Node 教學專案（STM32F103C8T6）
+  * 本檔由 CubeMX 產生/維護，應用程式碼一律放在 USER CODE 區塊內。
   *
   ******************************************************************************
   */
@@ -55,8 +55,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define LED_STATUS_Pin GPIO_PIN_13
 #define LED_STATUS_GPIO_Port GPIOC
-#define KEY0_Pin GPIO_PIN_0
-#define KEY0_GPIO_Port GPIOA
+#define KEY6_Pin GPIO_PIN_0
+#define KEY6_GPIO_Port GPIOA
 #define KEY1_Pin GPIO_PIN_1
 #define KEY1_GPIO_Port GPIOA
 #define KEY2_Pin GPIO_PIN_4
@@ -67,6 +67,10 @@ void Error_Handler(void);
 #define KEY4_GPIO_Port GPIOA
 #define KEY5_Pin GPIO_PIN_7
 #define KEY5_GPIO_Port GPIOA
+#define KEY0_Pin GPIO_PIN_0
+#define KEY0_GPIO_Port GPIOB
+#define KEY7_Pin GPIO_PIN_1
+#define KEY7_GPIO_Port GPIOB
 #define MPU_INT_Pin GPIO_PIN_5
 #define MPU_INT_GPIO_Port GPIOB
 #define MPU_INT_EXTI_IRQn EXTI9_5_IRQn

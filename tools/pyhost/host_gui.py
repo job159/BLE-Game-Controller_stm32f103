@@ -48,11 +48,16 @@ from keymapper import AirMouse, KeyMapper, MapError, PRESET_GROUPS
 
 KEYMAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "keymap.json")
-GAMEPAD_KEYS = (0, 1, 2, 3, 4, 5)   # 全部按鍵皆可映射
-DEVICE_KEYS = (2, 3, 4, 5)          # 僅這些持久化到裝置 EEPROM；
-                                    # KEY0/1 有本地功能，映射僅存本機 keymap.json
-DEFAULT_KEYMAP = {2: "mouse:left", 3: "mouse:right",
-                  4: "scroll:up", 5: "scroll:down"}
+GAMEPAD_KEYS = (0, 1, 2, 3, 4, 5, 6, 7)   # 全部 8 顆按鍵皆可映射
+DEVICE_KEYS = (2, 3, 4, 5)          # 僅這些持久化到裝置 EEPROM（keymap 槽所在）；
+                                    # KEY0/1/6/7 映射僅存本機 keymap.json
+LOCAL_FUNC_KEYS = (0, 1)            # 裝置端另有本地功能的鍵（KEY0 計數/空中滑鼠、KEY1 UI）
+# 面板分區顯示：方向鍵（上下左右）一組、其他一組；tuple 順序即顯示順序
+KEY_GROUPS = (("方向鍵", (6, 7, 2, 3)), ("其他", (0, 1, 4, 5)))
+DEFAULT_KEYMAP = {0: "scroll:up", 1: "scroll:down",
+                  2: "left", 3: "right",
+                  4: "space", 5: "mouse:left",
+                  6: "up", 7: "down"}
 
 # 系列色（曲線 / 大字讀數共用）
 C_ROLL = QColor("#e05c5c")
@@ -468,57 +473,70 @@ class MainWindow(QMainWindow):
         return box
 
     def _build_keymap(self) -> QGroupBox:
-        box = QGroupBox("手柄映射（KEY0~KEY5；* = 僅本機）")
+        box = QGroupBox("手柄映射（* = 僅本機；分方向鍵/其他兩區）")
         grid = QGridLayout(box)
 
         self.km_dots = {}
         self.km_combos = {}
-        for row, key_id in enumerate(GAMEPAD_KEYS):
-            dot = QLabel("●")
-            dot.setStyleSheet(f"color:{C_UNKNOWN};")
-            self.km_dots[key_id] = dot
-            grid.addWidget(dot, row, 0)
-            local = key_id not in DEVICE_KEYS
-            lab = QLabel(f"KEY{key_id}" + ("*" if local else ""))
-            if local:
-                lab.setToolTip(
-                    "此鍵在裝置端另有本地功能（KEY0 計數/空中滑鼠、"
-                    "KEY1 換頁/校正）——\n映射會與本地功能並存，且僅存於"
-                    "本機 keymap.json（不寫入裝置）")
-            grid.addWidget(lab, row, 1)
+        combo_tip = (
+            "可直接輸入，格式：\n"
+            "  mouse:left/right/middle/double/x1/x2\n"
+            "  scroll:up/down/left/right（按住連發）\n"
+            "  鍵盤鍵或組合：space、w、f5、ctrl+c、alt+tab、\n"
+            "  volume_up、play_pause…（按住=按住）\n"
+            "  text:要輸入的文字\n"
+            "  run:程式或命令（如 run:notepad）\n"
+            "留空 = 不動作")
+        row = 0
+        for group_name, group_keys in KEY_GROUPS:
+            hdr = QLabel(f"── {group_name} ──")
+            hdr.setStyleSheet(f"color:{C_UNKNOWN};font-weight:bold;")
+            grid.addWidget(hdr, row, 0, 1, 3)
+            row += 1
+            for key_id in group_keys:
+                dot = QLabel("●")
+                dot.setStyleSheet(f"color:{C_UNKNOWN};")
+                self.km_dots[key_id] = dot
+                grid.addWidget(dot, row, 0)
+                local = key_id not in DEVICE_KEYS
+                lab = QLabel(f"KEY{key_id}" + ("*" if local else ""))
+                if key_id in LOCAL_FUNC_KEYS:
+                    lab.setToolTip(
+                        "此鍵在裝置端另有本地功能（KEY0 計數/空中滑鼠、"
+                        "KEY1 換頁/校正）——\n映射會與本地功能並存，且僅存於"
+                        "本機 keymap.json（不寫入裝置）")
+                elif local:
+                    lab.setToolTip(
+                        "映射僅存於本機 keymap.json——裝置 EEPROM 的 keymap 槽"
+                        "\n目前僅涵蓋 KEY2~5（換電腦不跟著走，但功能一樣）")
+                grid.addWidget(lab, row, 1)
 
-            combo = QComboBox()
-            combo.setEditable(True)
-            self._fill_mapping_combo(combo)
-            combo.setMinimumWidth(150)
-            combo.setMaxVisibleItems(24)
-            combo.setToolTip(
-                "可直接輸入，格式：\n"
-                "  mouse:left/right/middle/double/x1/x2\n"
-                "  scroll:up/down/left/right（按住連發）\n"
-                "  鍵盤鍵或組合：space、w、f5、ctrl+c、alt+tab、\n"
-                "  volume_up、play_pause…（按住=按住）\n"
-                "  text:要輸入的文字\n"
-                "  run:程式或命令（如 run:notepad）\n"
-                "留空 = 不動作")
-            combo.setCurrentText(DEFAULT_KEYMAP.get(key_id, ""))
-            combo.currentTextChanged.connect(
-                lambda text, k=key_id: self._apply_mapping(k, text))
-            self.km_combos[key_id] = combo
-            grid.addWidget(combo, row, 2)
+                combo = QComboBox()
+                combo.setEditable(True)
+                self._fill_mapping_combo(combo)
+                combo.setMinimumWidth(150)
+                combo.setMaxVisibleItems(24)
+                combo.setToolTip(combo_tip)
+                combo.setCurrentText(DEFAULT_KEYMAP.get(key_id, ""))
+                combo.currentTextChanged.connect(
+                    lambda text, k=key_id: self._apply_mapping(k, text))
+                self.km_combos[key_id] = combo
+                grid.addWidget(combo, row, 2)
+                row += 1
 
         self.km_enable = QCheckBox("啟用控制電腦")
         self.km_enable.setToolTip("勾選後裝置按鍵將真的觸發滑鼠/鍵盤；"
                                   "為安全起見每次啟動都預設關閉")
         self.km_enable.toggled.connect(self._toggle_gamepad)
-        grid.addWidget(self.km_enable, len(GAMEPAD_KEYS), 0, 1, 3)
+        grid.addWidget(self.km_enable, row, 0, 1, 3)
+        row += 1
 
         # --- 空中滑鼠（裝置 KEY0 雙擊切換模式；此處調手感） ---
-        row = len(GAMEPAD_KEYS) + 1
         self.air_dot = QLabel("●")
         self.air_dot.setStyleSheet(f"color:{C_UNKNOWN};")
         grid.addWidget(self.air_dot, row, 0)
         grid.addWidget(QLabel("空中滑鼠(KEY0雙擊)"), row, 1, 1, 2)
+        row += 1
 
         from PySide6.QtWidgets import QSlider
         self.air_slider = QSlider(Qt.Horizontal)
@@ -527,8 +545,9 @@ class MainWindow(QMainWindow):
         self.air_slider.setToolTip("靈敏度（px/度）")
         self.air_slider.valueChanged.connect(
             lambda v: setattr(self.airmouse, "gain", float(v)))
-        grid.addWidget(QLabel("靈敏度"), row + 1, 0, 1, 1)
-        grid.addWidget(self.air_slider, row + 1, 1, 1, 2)
+        grid.addWidget(QLabel("靈敏度"), row, 0, 1, 1)
+        grid.addWidget(self.air_slider, row, 1, 1, 2)
+        row += 1
 
         inv = QHBoxLayout()
         self.air_inv_x = QCheckBox("反轉X")
@@ -540,7 +559,7 @@ class MainWindow(QMainWindow):
         inv.addWidget(self.air_inv_x)
         inv.addWidget(self.air_inv_y)
         inv.addStretch(1)
-        grid.addLayout(inv, row + 2, 0, 1, 3)
+        grid.addLayout(inv, row, 0, 1, 3)
         return box
 
     def _set_air_on(self, on: bool, source: str) -> None:

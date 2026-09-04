@@ -1,10 +1,12 @@
 {
   "map": {
-    "0": "scroll:up",
-    "1": "scroll:down",
+    "0": "enter",
+    "1": "mouse:left",
     "2": "left",
     "3": "right",
-    "4": "space",
-    "5": "up"
+    "4": "shift",
+    "5": "space",
+    "6": "up",
+    "7": "down"
   }
 }

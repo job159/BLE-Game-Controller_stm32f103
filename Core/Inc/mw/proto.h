@@ -99,7 +99,7 @@ typedef struct __attribute__((packed)) {
  * 手柄映射主要吃 press/release（可表達「按住」語意），
  * click/double/long 一併上報供 PC 端進階應用。 */
 typedef struct __attribute__((packed)) {
-    uint8_t key_id;     /* 0..5（KEY0..KEY5） */
+    uint8_t key_id;     /* 0..7（KEY0..KEY7） */
     uint8_t action;
 } proto_btn_t;
 

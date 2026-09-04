@@ -6,12 +6,12 @@
   ******************************************************************************
   * @attention
   *
-  * IMU-BLE Node ??�學專�?��?�STM32F103C8T6�?
+  * IMU-BLE Node 教學專案（STM32F103C8T6）
   *
-  * ?��檔為 CubeMX ?��??��?��?�入點�?�除 USER CODE ??塊�?��?�內容�?�新?��??��?��?�被覆寫??
-  * ??�用程�?��?�正??��?�入點在 Core/Src/app/app_main.c�?
-  *   - app_main_init() : ?��?��??��?��?��?��?��?��?�呼?���?�?
-  *   - app_main_loop() : ?��主迴??�中??��?�呼?��（�?��?��?��?��?�器�?
+  * 本檔為 CubeMX 產生之進入點；除 USER CODE 區塊外的內容重新產生時會被覆寫。
+  * 應用程式真正的進入點在 Core/Src/app/app_main.c：
+  *   - app_main_init() : 於周邊初始化完成後呼叫一次
+  *   - app_main_loop() : 於主迴圈中反覆呼叫（協作式排程器）
   *
   ******************************************************************************
   */
@@ -79,6 +79,7 @@ static void MX_IWDG_Init(void);
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -96,8 +97,8 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  /* ?��?��?��??線�?��?��?? IWDG，避??�中?��點�?��?��?�被??��???��?�置�?
-   * ??�產（無?��?��?��）�???��?��?��???�照常�?��?��?? */
+  /* 除錯器連線時凍結 IWDG，避免中斷點停住時被看門狗重置；
+   * 量產（無除錯器）狀態下看門狗照常生效。 */
   __HAL_DBGMCU_FREEZE_IWDG();
   /* USER CODE END SysInit */
 
@@ -137,7 +138,7 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
@@ -246,8 +247,8 @@ static void MX_IWDG_Init(void)
   /* USER CODE END IWDG_Init 0 */
 
   /* USER CODE BEGIN IWDG_Init 1 */
-  /* LSI �? 40kHz（誤差可??? ±50%）�??/64 �? 625Hz，Reload=2500 ??? ??�目 4 秒�?��?��??
-   * ??��?�於 task_sys 中確認�???��?�鍵任�?��?��?�簽?��後�?�餵??��?? */
+  /* LSI 約 40kHz（誤差可達 ±50%），/64 後 625Hz，Reload=2500 → 名目 4 秒逾時。
+   * 韌體於 task_sys 中確認所有關鍵任務均有簽到後才餵狗。 */
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
   hiwdg.Init.Prescaler = IWDG_PRESCALER_64;
@@ -373,17 +374,22 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : LED_STATUS_Pin */
   GPIO_InitStruct.Pin = LED_STATUS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LED_STATUS_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : KEY0_Pin KEY1_Pin KEY2_Pin KEY3_Pin
+  /*Configure GPIO pins : KEY6_Pin KEY1_Pin KEY2_Pin KEY3_Pin
                            KEY4_Pin KEY5_Pin */
-  GPIO_InitStruct.Pin = KEY0_Pin|KEY1_Pin|KEY2_Pin|KEY3_Pin
+  GPIO_InitStruct.Pin = KEY6_Pin|KEY1_Pin|KEY2_Pin|KEY3_Pin
                           |KEY4_Pin|KEY5_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : KEY0_Pin KEY7_Pin */
+  GPIO_InitStruct.Pin = KEY0_Pin|KEY7_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : MPU_INT_Pin */
   GPIO_InitStruct.Pin = MPU_INT_Pin;
@@ -410,8 +416,8 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* ??��?��?��?�段??�致?��?��誤�?��?�用中斷後�?��?��?�方便除?��?��?��上檢視現?��??
-   * ??�產?��境�?? IWDG ?��餵�?��?? 4 秒�?��?�觸?��硬�?��?�置，系統可?��行復??��?? */
+  /* 初始化階段的致命錯誤：停用中斷後停住，方便除錯器接上檢視現場。
+   * 量產環境下 IWDG 未餵狗約 4 秒後會觸發硬體重置，系統可自行復原。 */
   __disable_irq();
   while (1)
   {
